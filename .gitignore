@@ -1,0 +1,128 @@
+# ==============================================================================
+# Channel Harvest - .gitignore
+# Prevents committing large binaries, build outputs, media, and temporary files
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Production Releases & Large Packaged Binaries (>100MB GitHub limit)
+# Note: Release files should be published to GitHub Releases, not git repository
+# ------------------------------------------------------------------------------
+release/
+dist/
+build/
+runtime/
+bin/
+
+# Standalone Executables & Bundles
+*.exe
+*.dll
+*.pyd
+*.so
+*.dylib
+*.bin
+*.zip
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.msi
+
+# ------------------------------------------------------------------------------
+# 2. PyInstaller Build Artifacts & Intermediate Files
+# ------------------------------------------------------------------------------
+*.manifest
+*.spec.bak
+*.toc
+*.pkg
+*.pyz
+
+# ------------------------------------------------------------------------------
+# 3. Downloaded Media & Temporary Download Files
+# Prevents accidentally uploading downloaded YouTube videos/audios to GitHub
+# ------------------------------------------------------------------------------
+# Video formats
+*.mp4
+*.mkv
+*.webm
+*.mov
+*.avi
+*.ts
+*.flv
+*.m4v
+
+# Audio formats
+*.mp3
+*.m4a
+*.flac
+*.wav
+*.aac
+*.opus
+*.ogg
+
+# yt-dlp temporary download streams
+*.part
+*.ytdl
+*.temp
+*.tmp
+
+# Common download destination folders
+downloads/
+output/
+test_downloads/
+
+# ------------------------------------------------------------------------------
+# 4. Python Cache & Virtual Environments
+# ------------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+
+# Virtual Environments
+venv/
+.venv/
+env/
+.env/
+ENV/
+env.bak/
+venv.bak/
+
+# Packaging caches
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ------------------------------------------------------------------------------
+# 5. User Data, Local Settings, Archives & Logs
+# User settings are kept in %APPDATA%/ChannelHarvest, but ignore if copied locally
+# ------------------------------------------------------------------------------
+settings.json
+download_archive.txt
+*.log
+scratch/
+test_*.png
+
+# ------------------------------------------------------------------------------
+# 6. IDEs, Editors & OS Generated Files
+# ------------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
