@@ -38,11 +38,10 @@
   * **Save Chapters**: Extracts timestamped chapter navigation markers into clean `.chapters.txt` files.
 * **Individual Video Folder Organization**: Optionally organizes each video and all its related assets (media, `.srt`, thumbnail, `.description`, `.metadata.txt`, `.chapters.txt`) into its own dedicated subfolder with automatic duplicate title collision protection.
 * **Independent Skip Verification**: Intelligently skips already-downloaded files, allowing you to fetch missing subtitles, thumbnails, or metadata for existing local archives without re-downloading media streams.
-* * **Bilingual Language Support (English & 简体中文)**: Switch dynamically between English and Simplified Chinese directly from Settings, updating all labels, dialogs, and controls in real time without restart.
+* **Bilingual Language Support (English & 简体中文)**: Switch dynamically between English and Simplified Chinese directly from Settings, updating all labels, dialogs, and controls in real time without restart.
 * **Polished Modern Windows UI**: Desktop-first design featuring native Dark and Light theme switching, balanced settings layout, ergonomic vector action buttons, and zero-scroll startup display.
 * **Self-Contained & In-App Updates**: Bundles official FFmpeg and yt-dlp binaries in `runtime/`, with a 1-click in-app yt-dlp updater that requires zero administrator rights.
 * **Queue & Resiliency Management**: Full control to pause, resume, or cancel active downloads, backed by automatic 3x retries on transient network failures.
-
 ---
 
 ## 📥 Download & Installation
