@@ -1,26 +1,46 @@
 # Channel Harvest
 
-> **Harvest your channel. Keep every video.**
+<p align="center">
+  <img src="Channel Harvest__Logo.png" alt="Channel Harvest Logo" width="120"/>
+</p>
 
-A modern, clean, commercial-grade Windows desktop application for archiving and downloading entire YouTube channels and playlists. Built with **Python**, **PySide6** (Qt for Python), **yt-dlp**, and **FFmpeg**.
+<p align="center">
+  <strong>A modern, high-performance YouTube channel & playlist downloader</strong><br/>
+  Harvest your channel. Keep every video — with full media, subtitles, thumbnails, and metadata archival.
+</p>
 
-Distributed as a **100% self-contained Windows application**—no Python, command-line tools, or extra software required.
+<p align="center">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.1.0-6C63FF?style=flat-square"/>
+  <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-blue?style=flat-square"/>
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square"/>
+  <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-F59E0B?style=flat-square"/>
+</p>
+
+A desktop application for archiving and downloading entire YouTube channels and playlists. Built with **Python**, **PySide6** (Qt for Python), **yt-dlp**, and **FFmpeg**.
 
 ---
 
 ## 🌟 Key Features
 
-* **High-Speed Channel & Playlist Scanning**: Fast metadata extraction without UI freezes or unneeded downloads.
+* **High-Speed Channel & Playlist Scanning**: Fast metadata extraction without UI freezes, featuring real-time title search and multi-select queue controls.
 * **Flexible Download Modes**:
-  * **Video Only**: High-definition video with crystal-clear merged audio (1 file per item).
-  * **Audio Only**: Standalone music or podcast audio extracted into MP3, M4A, FLAC, WAV, AAC, or OPUS (with configurable bitrate).
-  * **Video + Audio**: Concurrently saves both the video file and standalone audio track.
-* **Self-Contained Bundled Binaries**: Bundles official, verified `ffmpeg.exe`, `ffprobe.exe`, and `yt-dlp.exe` in the `runtime/` folder.
-* **Non-Admin In-App yt-dlp Updates**: Directly checks and downloads official yt-dlp updates from GitHub releases into user AppData without needing `pip` or administrator rights.
-* **Duplicate Prevention**: Persistent download archive (`%APPDATA%/ChannelHarvest/download_archive.txt`) automatically skips already saved videos.
-* **Queue & Retry Management**: Pause, resume, and cancel queues with automatic 3x retries on transient network failures.
-* **Modern Windows UI**: Clean Segoe UI typography, native dark and light theme switching, crisp SVG icons, and live status badges.
-* **Clean User Data Separation**: Settings, archives, and logs are kept in `%APPDATA%\ChannelHarvest\`, leaving application directories completely pristine.
+  * **Video + Audio**: High-definition video with crystal-clear merged audio (MOV, MP4, MKV, WEBM).
+  * **Video Only**: Standalone high-resolution video streams.
+  * **Audio Only**: Pristine standalone audio extracted into WAV, MP3, M4A, FLAC, AAC, or OPUS with customizable bitrates.
+  * **Subtitle Only**: Standalone subtitle and caption extraction in seconds without downloading media streams.
+* **Intelligent Subtitle & Caption Extraction**:
+  * Automatically detects official manual subtitles and auto-generated captions across multiple languages (Chinese, English, Malay, Japanese, Korean, or All).
+  * Automatically converts tracks to standard SubRip (`.srt`) format via bundled FFmpeg with clean player-friendly filename matching.
+* **YouTube Thumbnail Archival**: Download video thumbnails as separate image files in JPG, PNG, WEBP, or native source format matching media filenames without container embedding.
+* **Comprehensive Metadata, Description & Chapters Archival**:
+  * **Save Description**: Exports raw video descriptions to clean `.description` text files preserving line breaks and links.
+  * **Save Metadata**: Converts complete video metadata into a structured, human-readable `.metadata.txt` record (statistics, tags, uploader info).
+  * **Save Chapters**: Extracts timestamped chapter navigation markers into clean `.chapters.txt` files.
+* **Individual Video Folder Organization**: Optionally organizes each video and all its related assets (media, `.srt`, thumbnail, `.description`, `.metadata.txt`, `.chapters.txt`) into its own dedicated subfolder with automatic duplicate title collision protection.
+* **Independent Skip Verification**: Intelligently skips already-downloaded files, allowing you to fetch missing subtitles, thumbnails, or metadata for existing local archives without re-downloading media streams.
+* **Polished Modern Windows UI**: Desktop-first design featuring native Dark and Light theme switching, balanced settings layout, ergonomic vector action buttons, and zero-scroll startup display.
+* **Self-Contained & In-App Updates**: Bundles official FFmpeg and yt-dlp binaries in `runtime/`, with a 1-click in-app yt-dlp updater that requires zero administrator rights.
+* **Queue & Resiliency Management**: Full control to pause, resume, or cancel active downloads, backed by automatic 3x retries on transient network failures.
 
 ---
 
@@ -29,7 +49,7 @@ Distributed as a **100% self-contained Windows application**—no Python, comman
 Visit the [GitHub Releases](https://github.com/jjsiew2014-art/ChannelHarvest/releases) page to download the latest release for **Windows 10 / 11 (64-bit)**:
 
 ### 1. Windows Installer (Recommended)
-* **File**: `ChannelHarvest-Setup-v1.0.0.exe`
+* **File**: `ChannelHarvest-Setup-v1.1.0.exe`
 * **Features**:
   * Clean standard Windows installer (built with Inno Setup).
   * Installs into `Program Files\Channel Harvest` (or user profile for non-admin).
@@ -37,7 +57,7 @@ Visit the [GitHub Releases](https://github.com/jjsiew2014-art/ChannelHarvest/rel
   * Registers in Windows *Settings > Installed apps* with a clean uninstaller.
 
 ### 2. Standalone Portable ZIP
-* **File**: `ChannelHarvest-Portable-v1.0.0.zip`
+* **File**: `ChannelHarvest-Portable-v1.1.0.zip`
 * **Features**:
   * Zero installation required.
   * Extract anywhere (e.g. `C:\Tools\ChannelHarvest` or a USB drive) and double-click `ChannelHarvest.exe`.
@@ -55,7 +75,7 @@ Because Channel Harvest is an open-source tool and not signed with an expensive 
 
 You can verify the SHA-256 integrity hash of your downloaded file against `SHA256SUMS.txt` published on the GitHub Releases page:
 ```powershell
-Get-FileHash ChannelHarvest-Setup-v1.0.0.exe -Algorithm SHA256
+Get-FileHash ChannelHarvest-Setup-v1.1.0.exe -Algorithm SHA256
 ```
 
 
@@ -90,6 +110,9 @@ Channel Harvest/
 │   ├── download_manager.py        # Background QThread queue dispatcher
 │   ├── ffmpeg_checker.py          # Runtime & system FFmpeg/FFprobe detection
 │   ├── format_selector.py         # Dynamic format spec builder
+│   ├── info_manager.py            # Description, metadata & chapters extraction engine
+│   ├── subtitle_manager.py        # Intelligent subtitle detection, conversion & normalization
+│   ├── thumbnail_manager.py       # YouTube thumbnail downloader and converter
 │   ├── updater.py                 # Standalone yt-dlp updater (binary & wheel)
 │   └── ytdlp_engine.py            # Direct yt-dlp Python API integration
 │
@@ -143,8 +166,8 @@ The script will automatically:
 2. Generate multi-resolution icons and PE metadata.
 3. Clean and freeze the application using PyInstaller.
 4. Deploy the `runtime/` folder into `dist/ChannelHarvest/`.
-5. Package `release/ChannelHarvest-Portable-v1.0.0.zip`.
-6. Compile `release/ChannelHarvest-Setup-v1.0.0.exe` using Inno Setup.
+5. Package `release/ChannelHarvest-Portable-v1.1.0.zip`.
+6. Compile `release/ChannelHarvest-Setup-v1.1.0.exe` using Inno Setup.
 7. Generate cryptographic SHA-256 hashes in `release/SHA256SUMS.txt`.
 
 
