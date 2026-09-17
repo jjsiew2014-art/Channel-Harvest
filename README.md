@@ -6,8 +6,7 @@
 
 <p align="center">
   <strong>A modern, high-performance YouTube channel & playlist downloader</strong><br/>
-  Harvest your channel. Keep every video — with full media, subtitles, thumbnails, and metadata archival.
-  
+  Harvest your channel. Keep every video — with full media, subtitles, thumbnails, and metadata archival.<br/>
   Built with **Python**, **PySide6** (Qt for Python), **yt-dlp**, and **FFmpeg**.
 </p>
 
