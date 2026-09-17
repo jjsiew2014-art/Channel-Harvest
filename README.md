@@ -7,6 +7,7 @@
 <p align="center">
   <strong>A modern, high-performance YouTube channel & playlist downloader</strong><br/>
   Harvest your channel. Keep every video — with full media, subtitles, thumbnails, and metadata archival.
+  Built with **Python**, **PySide6** (Qt for Python), **yt-dlp**, and **FFmpeg**.
 </p>
 
 <p align="center">
@@ -16,7 +17,6 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-F59E0B?style=flat-square"/>
 </p>
 
-A desktop application for archiving and downloading entire YouTube channels and playlists. Built with **Python**, **PySide6** (Qt for Python), **yt-dlp**, and **FFmpeg**.
 
 ---
 
@@ -60,7 +60,7 @@ Visit the [GitHub Releases](https://github.com/jjsiew2014-art/ChannelHarvest/rel
 * **File**: `ChannelHarvest-Portable-v1.1.0.zip`
 * **Features**:
   * Zero installation required.
-  * Extract anywhere (e.g. `C:\Tools\ChannelHarvest` or a USB drive) and double-click `ChannelHarvest.exe`.
+  * Extract anywhere and double-click `ChannelHarvest.exe`.
   * Fully self-contained with bundled `runtime/` binaries.
 
 ---
