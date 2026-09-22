@@ -22,7 +22,22 @@
 
 ## 🌟 Key Features
 
-* **EJS & Deno JavaScript Challenge Solver**:
+* **High-Speed Channel & Playlist Scanning**: Fast metadata extraction without UI freezes, featuring real-time title search and multi-select queue controls.
+* **Flexible Download Modes**:
+  * **Video + Audio**: High-definition video with crystal-clear merged audio.
+  * **Video Only**: Standalone high-resolution video streams.
+  * **Audio Only**: Pristine standalone audio extracted with customizable bitrates.
+  * **Subtitle Only**: Standalone subtitle and caption extraction in seconds without downloading media streams.
+* **Intelligent Subtitle & Caption Extraction**:
+  * Automatically detects official manual subtitles and auto-generated captions across multiple languages (Chinese, English, Malay, Japanese, Korean, or All).
+  * Automatically converts tracks to standard SubRip (`.srt`) format via bundled FFmpeg with clean player-friendly filename matching.
+* **YouTube Thumbnail Archival**: Download video thumbnails as separate image files in JPG, PNG, WEBP, or native source format matching media filenames without container embedding.
+* **Comprehensive Metadata, Description & Chapters Archival**:
+  * **Save Description**: Exports raw video descriptions to clean `.description` text files preserving line breaks and links.
+  * **Save Metadata**: Converts complete video metadata into a structured, human-readable `.metadata.txt` record.
+  * **Save Chapters**: Extracts timestamped chapter navigation markers into clean `.chapters.txt` files.
+* **Individual Video Folder Organization**: Optionally organizes each video and all its related assets into its own dedicated subfolder with automatic duplicate title collision protection.
+* * **EJS & Deno JavaScript Challenge Solver**:
   * Bundles a dedicated modern JavaScript runtime engine (`deno.exe`) directly in `runtime/` to solve YouTube's latest client-side signature decryption (n-sig challenge) and Embedded JavaScript (EJS) player routines without external Node.js or Deno installations.
   * Completely resolves YouTube download throttling, signature calculation failures, and HTTP 403 Forbidden errors.
 * **Centralized Runtime Manager**:
@@ -37,26 +52,11 @@
   * One-click system diagnostic generator compiling hardware architecture, Windows OS build, Python runtime, component versions, network connectivity, and cookie authentication status.
   * Dedicated "Copy Information" button to paste formatted diagnostic reports directly into GitHub Issues for rapid debugging.
   * Direct "Open Log Folder" shortcut to instantly access `%APPDATA%\ChannelHarvest\logs` and sanitized `channel_harvest_error.log`.
-* **High-Speed Channel & Playlist Scanning**: Fast metadata extraction without UI freezes, featuring real-time title search and multi-select queue controls.
-* **Flexible Download Modes**:
-  * **Video + Audio**: High-definition video with crystal-clear merged audio (MOV, MP4, MKV, WEBM).
-  * **Video Only**: Standalone high-resolution video streams.
-  * **Audio Only**: Pristine standalone audio extracted into WAV, MP3, M4A, FLAC, AAC, or OPUS with customizable bitrates.
-  * **Subtitle Only**: Standalone subtitle and caption extraction in seconds without downloading media streams.
-* **Intelligent Subtitle & Caption Extraction**:
-  * Automatically detects official manual subtitles and auto-generated captions across multiple languages (Chinese, English, Malay, Japanese, Korean, or All).
-  * Automatically converts tracks to standard SubRip (`.srt`) format via bundled FFmpeg with clean player-friendly filename matching.
-* **YouTube Thumbnail Archival**: Download video thumbnails as separate image files in JPG, PNG, WEBP, or native source format matching media filenames without container embedding.
-* **Comprehensive Metadata, Description & Chapters Archival**:
-  * **Save Description**: Exports raw video descriptions to clean `.description` text files preserving line breaks and links.
-  * **Save Metadata**: Converts complete video metadata into a structured, human-readable `.metadata.txt` record (statistics, tags, uploader info).
-  * **Save Chapters**: Extracts timestamped chapter navigation markers into clean `.chapters.txt` files.
-* **Individual Video Folder Organization**: Optionally organizes each video and all its related assets (media, `.srt`, thumbnail, `.description`, `.metadata.txt`, `.chapters.txt`) into its own dedicated subfolder with automatic duplicate title collision protection.
-* **Windows Taskbar Progress (ITaskbarList3)**: Real-time download progress tracking rendered directly on the Windows taskbar application icon with dynamic color status (green for active, yellow for paused, red for errors).
+* **Windows Taskbar Progress**: Real-time download progress tracking rendered directly on the Windows taskbar application icon with dynamic color status.
 * **Smart Error Classification & Actionable Guidance**: Intelligent error classifier analyzing download failures into human-readable diagnoses with clear, actionable solutions and dedicated error log recording.
 * **Independent Skip Verification**: Intelligently skips already-downloaded files, allowing you to fetch missing subtitles, thumbnails, or metadata for existing local archives without re-downloading media streams.
-* **Bilingual Language Support (English & 简体中文)**: Switch dynamically between English and Simplified Chinese directly from Settings, updating all labels, dialogs, and controls in real time without restart.
-* **Polished Modern Windows UI**: Desktop-first design featuring native Dark and Light theme switching, balanced settings layout, ergonomic vector action buttons, and instantaneous settings dialog opening (~140ms).
+* **Bilingual Language Support**: Switch dynamically between English and Simplified Chinese directly from Settings, updating all labels, dialogs, and controls in real time without restart.
+* **Polished Modern Windows UI**: Desktop-first design featuring native Dark and Light theme switching, balanced settings layout, ergonomic vector action buttons, and instantaneous settings dialog opening.
 * **Queue & Resiliency Management**: Full control to pause, resume, or cancel active downloads, backed by automatic 3x retries on transient network failures.
 
 ---
