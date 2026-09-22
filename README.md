@@ -38,9 +38,23 @@
   * **Save Chapters**: Extracts timestamped chapter navigation markers into clean `.chapters.txt` files.
 * **Individual Video Folder Organization**: Optionally organizes each video and all its related assets (media, `.srt`, thumbnail, `.description`, `.metadata.txt`, `.chapters.txt`) into its own dedicated subfolder with automatic duplicate title collision protection.
 * **Independent Skip Verification**: Intelligently skips already-downloaded files, allowing you to fetch missing subtitles, thumbnails, or metadata for existing local archives without re-downloading media streams.
+* * **EJS & Deno JavaScript Challenge Solver**:
+  * Bundles a dedicated modern JavaScript runtime engine (`deno.exe`) directly in `runtime/` to solve YouTube's latest client-side signature decryption (n-sig challenge) and Embedded JavaScript (EJS) player routines without external Node.js or Deno installations.
+  * Completely resolves YouTube download throttling, signature calculation failures, and HTTP 403 Forbidden errors.
+* **Centralized Runtime Manager**:
+  * Real-time visual status dashboard integrated into Settings to inspect operational readiness, paths, and versions of all core components: `yt-dlp`, `EJS` (JavaScript Engine), `Deno`, and `FFmpeg`.
+  * Features an asynchronous in-app background updater for `yt-dlp` requiring zero administrator privileges, backed by multi-level version caching for instantaneous dialog response.
+* **YouTube Authentication & Cookie Management**:
+  * Direct automatic cookie extraction from installed Windows desktop browsers (Google Chrome, Microsoft Edge, Mozilla Firefox, Brave, Opera, Vivaldi).
+  * Supports custom Netscape format `cookies.txt` files with automated syntax validation, expiration warnings, and security sanitization.
+  * Built-in live authentication verification tool to test YouTube login and premium access status before starting batch downloads.
+  * Unlocks age-restricted content, private playlists, members-only uploads, and unlisted high-definition streams.
+* **Diagnostic Report & Troubleshooting**:
+  * One-click system diagnostic generator compiling hardware architecture, Windows OS build, Python runtime, component versions, network connectivity, and cookie authentication status.
+  * Dedicated "Copy Information" button to paste formatted diagnostic reports directly into GitHub Issues for rapid debugging.
+  * Direct "Open Log Folder" shortcut to instantly access `%APPDATA%\ChannelHarvest\logs` and sanitized `channel_harvest_error.log`.
 * **Bilingual Language Support (English & 简体中文)**: Switch dynamically between English and Simplified Chinese directly from Settings, updating all labels, dialogs, and controls in real time without restart.
 * **Polished Modern Windows UI**: Desktop-first design featuring native Dark and Light theme switching, balanced settings layout, ergonomic vector action buttons, and zero-scroll startup display.
-* **Self-Contained & In-App Updates**: Bundles official FFmpeg and yt-dlp binaries in `runtime/`, with a 1-click in-app yt-dlp updater that requires zero administrator rights.
 * **Queue & Resiliency Management**: Full control to pause, resume, or cancel active downloads, backed by automatic 3x retries on transient network failures.
 ---
 
@@ -61,7 +75,7 @@ Visit the [GitHub Releases](https://github.com/jjsiew2014-art/ChannelHarvest/rel
 * **Features**:
   * Zero installation required.
   * Extract anywhere and double-click `ChannelHarvest.exe`.
-  * Fully self-contained with bundled `runtime/` binaries.
+  * Fully self-contained with bundled `runtime/` binaries (`ffmpeg.exe`, `ffprobe.exe`, `deno.exe`, `yt-dlp.exe`).
 
 ---
 
@@ -98,8 +112,11 @@ Channel Harvest/
 ├── LICENSE                        # MIT License
 ├── README.md                      # Documentation
 │
-├── core/                          # Data Models, Paths & Settings
+├── core/                          # Data Models, Paths, Diagnostics & Settings
 │   ├── __init__.py
+│   ├── diagnostics.py             # System & runtime diagnostic report generator
+│   ├── error_classifier.py        # Intelligent error categorization & action advice
+│   ├── i18n.py                    # Bilingual internationalization (English / 简体中文)
 │   ├── models.py                  # VideoItem, DownloadSettings, VideoStatus
 │   ├── paths.py                   # AppData & runtime path resolution
 │   ├── settings.py                # Persistent JSON SettingsManager
@@ -107,10 +124,13 @@ Channel Harvest/
 │
 ├── downloader/                    # Download & Extraction Engine
 │   ├── __init__.py
+│   ├── auth_checker.py            # Browser cookie extractor & Netscape format validator
+│   ├── deno_checker.py            # Deno & JavaScript engine environment detection
 │   ├── download_manager.py        # Background QThread queue dispatcher
 │   ├── ffmpeg_checker.py          # Runtime & system FFmpeg/FFprobe detection
 │   ├── format_selector.py         # Dynamic format spec builder
 │   ├── info_manager.py            # Description, metadata & chapters extraction engine
+│   ├── runtime_manager.py         # Live component tracking, version cache & updates
 │   ├── subtitle_manager.py        # Intelligent subtitle detection, conversion & normalization
 │   ├── thumbnail_manager.py       # YouTube thumbnail downloader and converter
 │   ├── updater.py                 # Standalone yt-dlp updater (binary & wheel)
@@ -118,16 +138,20 @@ Channel Harvest/
 │
 ├── gui/                           # Desktop User Interface (PySide6)
 │   ├── __init__.py
+│   ├── auth_result_dialog.py      # YouTube authentication test results dialog
+│   ├── error_details_dialog.py    # Formatted error details & actionable solutions dialog
 │   ├── main_window.py             # Main application window
-│   ├── settings_dialog.py         # Settings & About dialog
+│   ├── settings_dialog.py         # Settings, Runtime Manager & Diagnostics dialog
+│   ├── styles.py                  # Dark/Light Windows theme engine
 │   ├── summary_dialog.py          # Download completion summary dialog
-│   ├── video_table.py             # Video queue table with live progress badges
-│   └── styles.py                  # Dark/Light Windows theme engine
+│   ├── taskbar_progress.py        # Windows taskbar ITaskbarList3 dynamic progress bar
+│   └── video_table.py             # Video queue table with live progress badges
 │
 ├── installer/                     # Inno Setup Windows Installer
 │   └── ChannelHarvest.iss         # Inno Setup 6 compiler configuration
 │
 └── runtime/                       # Bundled External Executables
+    ├── deno.exe                   # Deno JavaScript runtime for YouTube EJS challenges
     ├── ffmpeg.exe                 # FFmpeg media converter
     ├── ffprobe.exe                # FFprobe media stream analyzer
     └── yt-dlp.exe                 # yt-dlp standalone engine
