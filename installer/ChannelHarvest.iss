@@ -2,8 +2,9 @@
 ; Commercial-grade Windows Installer Configuration
 
 #define MyAppName "Channel Harvest"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.2.0"
 #define MyAppPublisher "jjsiew2014-art"
+
 
 #define MyAppURL "https://github.com/jjsiew2014-art/ChannelHarvest"
 #define MyAppExeName "ChannelHarvest.exe"

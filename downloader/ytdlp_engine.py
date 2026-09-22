@@ -14,6 +14,7 @@ Key Features:
 
 import os
 import re
+import time
 import socket
 from pathlib import Path
 from urllib.error import URLError
@@ -26,6 +27,7 @@ from yt_dlp.utils import DownloadError, ExtractorError, UnsupportedError, Youtub
 from PySide6.QtCore import QThread, Signal, QObject
 
 from core.models import VideoItem, DownloadSettings, VideoStatus, DownloadMode
+from core.paths import get_deno_executable
 from downloader.format_selector import FormatSelector
 
 
@@ -34,8 +36,11 @@ from downloader.format_selector import FormatSelector
 # =============================================================================
 
 class DownloaderError(Exception):
-    """Base exception for downloader errors."""
-    pass
+    """Base exception for downloader errors with stage and raw error tracking."""
+    def __init__(self, message: str, stage: str = "video", raw_error: str = ""):
+        super().__init__(message)
+        self.stage = stage
+        self.raw_error = raw_error or message
 
 
 class InvalidURLError(DownloaderError):
@@ -64,38 +69,146 @@ class DownloadCancelledException(DownloaderError):
 
 
 # =============================================================================
+# Windows File-Locking Helpers
+# =============================================================================
+
+RENAME_ERROR_PATTERN = re.compile(
+    r"(?:Unable to rename file:.*?)?(?:\[WinError\s*32\]|being used by another process).*?['\"]([^'\"]+)['\"]\s*->\s*['\"]([^'\"]+)['\"]",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def parse_locked_rename_paths(error_msg: str) -> Optional[Tuple[Path, Path]]:
+    """
+    Extracts source and destination paths from a Windows file-locking rename error message.
+    """
+    msg = str(error_msg or "")
+    m = RENAME_ERROR_PATTERN.search(msg)
+    if m:
+        try:
+            src = Path(m.group(1).strip())
+            dst = Path(m.group(2).strip())
+            return src, dst
+        except Exception:
+            return None
+    return None
+
+
+def is_final_output_file(dst_path: Path, video_id: str = "") -> bool:
+    """
+    Determines if a destination path represents the final merged/output media file
+    or an intermediate format stream (e.g. .f137.mp4, .f140.m4a, .temp.mp4).
+    """
+    name = dst_path.name
+    if video_id and f"[{video_id}]" not in name and video_id not in name:
+        return False
+    if name.endswith(".part") or name.endswith(".ytdl") or ".temp." in name:
+        return False
+    if re.search(r"\.f\d+\.[a-zA-Z0-9]+$", name):
+        return False
+    return True
+
+
+def is_http_416_error(error_msg: str) -> bool:
+    """
+    Detects if an error message indicates an HTTP 416 Requested Range Not Satisfiable
+    or invalid resume state.
+    """
+    low = str(error_msg or "").lower()
+    return (
+        "http error 416" in low
+        or "http 416" in low
+        or ("416" in low and ("range not satisfiable" in low or "range" in low))
+        or "requested range not satisfiable" in low
+    )
+
+
+def find_video_partial_files(target_dir: Path, video_id: str) -> List[Path]:
+    """
+    Identifies all partial (.part) or download state (.ytdl) files in target_dir
+    that belong strictly to video_id.
+    Guarantees no files belonging to other videos are touched.
+    """
+    if not target_dir.is_dir() or not video_id:
+        return []
+
+    partial_files = []
+    id_bracket = f"[{video_id}]"
+
+    try:
+        for entry in target_dir.iterdir():
+            if not entry.is_file():
+                continue
+            name = entry.name
+            if name.endswith(".part") or name.endswith(".ytdl"):
+                # Strict ownership check: must match video ID
+                if id_bracket in name or video_id in name:
+                    partial_files.append(entry)
+    except Exception:
+        pass
+
+    return partial_files
+
+
+def find_completed_final_file(target_dir: Path, video_id: str) -> Optional[Path]:
+    """
+    Checks if a valid, complete final output media file already exists for video_id.
+    """
+    if not target_dir.is_dir() or not video_id:
+        return None
+
+    try:
+        for entry in target_dir.iterdir():
+            if entry.is_file() and is_final_output_file(entry, video_id):
+                if entry.stat().st_size > 0:
+                    return entry
+    except Exception:
+        pass
+
+    return None
+
+
+# =============================================================================
 # yt-dlp Custom Logger Bridge
 # =============================================================================
+
+ANSI_ESCAPE_RE = re.compile(r'\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+
 
 class YtDlpLogger:
     """
     Custom logger that routes internal yt-dlp messages into our Qt application log.
     This avoids stdout clutter and allows users to see real-time progress.
+    Sanitizes terminal ANSI color and control codes before emitting to the GUI.
     """
 
     def __init__(self, log_callback: Optional[Callable[[str], None]] = None):
         self._callback = log_callback
 
+    @staticmethod
+    def _sanitize(msg: str) -> str:
+        return ANSI_ESCAPE_RE.sub("", msg)
+
     def debug(self, msg: str) -> None:
         """Called by yt-dlp for debug and step messages."""
         if any(msg.startswith(prefix) for prefix in ("[youtube", "[Extracting", "[info]", "[download]", "[Merger]", "[Fixup")):
             if self._callback:
-                self._callback(f"[yt-dlp] {msg}")
+                self._callback(self._sanitize(f"[yt-dlp] {msg}"))
 
     def info(self, msg: str) -> None:
         """Called by yt-dlp for informational messages."""
         if self._callback:
-            self._callback(f"[yt-dlp] {msg}")
+            self._callback(self._sanitize(f"[yt-dlp] {msg}"))
 
     def warning(self, msg: str) -> None:
         """Called by yt-dlp when a non-fatal warning occurs."""
         if self._callback:
-            self._callback(f"[yt-dlp WARNING] {msg}")
+            self._callback(self._sanitize(f"[yt-dlp WARNING] {msg}"))
 
     def error(self, msg: str) -> None:
         """Called by yt-dlp when an error occurs."""
         if self._callback:
-            self._callback(f"[yt-dlp ERROR] {msg}")
+            self._callback(self._sanitize(f"[yt-dlp ERROR] {msg}"))
 
 
 # =============================================================================
@@ -218,10 +331,78 @@ class YtDlpEngine:
         except (ValueError, TypeError):
             return "Unknown"
 
+    @staticmethod
+    def build_base_ydl_opts(
+        log_callback: Optional[Callable[[str], None]] = None,
+        browser_cookies: Optional[str] = None,
+        quiet: bool = True,
+        no_warnings: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Builds standard yt-dlp option dictionary configured with:
+        1. Bundled Deno JavaScript runtime via js_runtimes for solving YouTube challenges.
+        2. Optional browser cookie extraction when configured by the user.
+        3. Application logger routing to GUI activity log.
+        """
+        opts: Dict[str, Any] = {
+            "quiet": quiet,
+            "no_warnings": no_warnings,
+        }
+        if log_callback:
+            opts["logger"] = YtDlpLogger(log_callback)
+
+        # 1. Attach Deno runtime if available
+        deno_exe = get_deno_executable()
+        if deno_exe and deno_exe.is_file():
+            opts["js_runtimes"] = {
+                "deno": {"path": str(deno_exe.resolve())}
+            }
+        # Enable official remote components fallback for challenge solver
+        opts["remote_components"] = ["ejs:github"]
+
+        # 2. Attach browser cookies or cookie file if explicitly configured
+        cookie_browser = browser_cookies
+        auth_method = None
+        browser_profile = None
+        try:
+            from core.settings import SettingsManager
+            sm = SettingsManager()
+            auth_method = sm.get("auth_method", None)
+            browser_profile = sm.get("browser_profile", "Default")
+            if not cookie_browser:
+                cookie_browser = sm.get("browser_cookies", "none")
+        except Exception:
+            if not cookie_browser:
+                cookie_browser = "none"
+
+        # If auth_method is explicitly "none", never attach cookies
+        if auth_method == "none" and (not browser_cookies or browser_cookies == "none"):
+            return opts
+
+        if cookie_browser and str(cookie_browser).lower().strip() not in ("none", "", "null", "false"):
+            raw_target = str(cookie_browser).strip()
+            if raw_target.lower() == "custom_file" or auth_method == "custom_file":
+                try:
+                    from core.settings import SettingsManager
+                    cookie_path_str = SettingsManager().get("custom_cookie_file", "")
+                    if cookie_path_str and Path(cookie_path_str).is_file():
+                        opts["cookiefile"] = str(Path(cookie_path_str).resolve())
+                except Exception:
+                    pass
+            elif Path(raw_target).is_file():
+                opts["cookiefile"] = str(Path(raw_target).resolve())
+            else:
+                browser_clean = raw_target.lower()
+                prof = browser_profile if browser_profile and browser_profile.lower() != "default" else None
+                opts["cookiesfrombrowser"] = (browser_clean, prof, None, None)
+
+        return opts
+
     def extract_channel_entries(
         self,
         url: str,
         log_callback: Optional[Callable[[str], None]] = None,
+        browser_cookies: Optional[str] = None,
     ) -> List[VideoItem]:
         """
         Extracts video entries from a channel or playlist URL using yt-dlp.
@@ -235,14 +416,17 @@ class YtDlpEngine:
         if log_callback:
             log_callback(f"[INFO] Connecting to: {normalized_url}")
 
-        ydl_opts = {
+        ydl_opts = self.build_base_ydl_opts(
+            log_callback=log_callback,
+            browser_cookies=browser_cookies,
+            quiet=True,
+            no_warnings=True,
+        )
+        ydl_opts.update({
             "extract_flat": "in_playlist",
             "skip_download": True,
-            "quiet": True,
-            "no_warnings": True,
             "ignoreerrors": True,
-            "logger": YtDlpLogger(log_callback),
-        }
+        })
 
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -387,6 +571,210 @@ class YtDlpEngine:
 
         return ytdlp_progress_hook
 
+    @staticmethod
+    def safe_finalize_rename(
+        src_path: Path,
+        dst_path: Path,
+        raw_error: str = "",
+        log_callback: Optional[Callable[[str], None]] = None,
+        cancel_check: Optional[Callable[[], bool]] = None,
+    ) -> bool:
+        """
+        Safely attempts to finalize/rename a downloaded file that was temporarily locked
+        by Windows (WinError 32 / sharing violation).
+
+        Applies bounded exponential backoff:
+        Attempt 1: ~1s
+        Attempt 2: ~2s
+        Attempt 3: ~4s
+        Attempt 4: ~8s
+        Attempt 5: ~10s
+        Max 5 attempts. No infinite loops.
+        """
+        delays = [1.0, 2.0, 4.0, 8.0, 10.0]
+
+        # 1. If destination already exists, is complete (>0 bytes), and src is gone or equal/larger, already finalized!
+        try:
+            if dst_path.is_file() and dst_path.stat().st_size > 0:
+                if not src_path.exists():
+                    if log_callback:
+                        log_callback("[File Finalization] File rename successful after retry.")
+                    return True
+                elif dst_path.stat().st_size >= src_path.stat().st_size:
+                    try:
+                        src_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    if log_callback:
+                        log_callback("[File Finalization] File rename successful after retry.")
+                    return True
+        except Exception:
+            pass
+
+        # 2. Verify source file exists
+        if not src_path.is_file():
+            return False
+
+        # 3. Verify file size is stable (>0 and not actively changing)
+        try:
+            size_1 = src_path.stat().st_size
+            if size_1 <= 0:
+                return False
+            time.sleep(0.1)
+            size_2 = src_path.stat().st_size
+            if size_1 != size_2:
+                # Still actively being written by another process; abort rename to prevent corruption
+                return False
+        except Exception:
+            return False
+
+        # 4. Perform bounded backoff retries (1 to 5)
+        for attempt, delay in enumerate(delays, start=1):
+            if cancel_check and cancel_check():
+                raise DownloadCancelledException("Download cancelled by user.")
+
+            delay_unit = "second" if delay == 1.0 else "seconds"
+            delay_num = int(delay) if delay.is_integer() else delay
+
+            if log_callback:
+                log_callback(f"[File Finalization] Windows file lock detected. Retrying rename in {delay_num} {delay_unit}...")
+                log_callback(f"[File Finalization] Retry {attempt}/5...")
+
+            # Responsive cancellable sleep
+            elapsed = 0.0
+            while elapsed < delay:
+                if cancel_check and cancel_check():
+                    raise DownloadCancelledException("Download cancelled by user.")
+                sleep_slice = min(0.1, delay - elapsed)
+                time.sleep(sleep_slice)
+                elapsed += sleep_slice
+
+            if cancel_check and cancel_check():
+                raise DownloadCancelledException("Download cancelled by user.")
+
+            # Check if destination exists and is valid
+            try:
+                if dst_path.is_file() and dst_path.stat().st_size >= src_path.stat().st_size and dst_path.stat().st_size > 0:
+                    try:
+                        src_path.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                    if log_callback:
+                        log_callback("[File Finalization] File rename successful after retry.")
+                    return True
+            except Exception:
+                pass
+
+            # Try renaming with os.replace
+            try:
+                dst_path.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(src_path, dst_path)
+                if dst_path.is_file() and dst_path.stat().st_size > 0:
+                    if log_callback:
+                        log_callback("[File Finalization] File rename successful after retry.")
+                    return True
+            except OSError:
+                # Still locked by Windows process, continue to next backoff attempt
+                pass
+
+        # If all 5 attempts exhausted:
+        if log_callback:
+            log_callback("[File Finalization] Unable to finalize file after 5 attempts. Error Category: FILE_LOCKED")
+        return False
+
+    @classmethod
+    def recover_from_range_error(
+        cls,
+        video: VideoItem,
+        target_dir: Path,
+        recovery_attempt: int,
+        max_recovery_attempts: int = 2,
+        format_spec: str = "",
+        log_callback: Optional[Callable[[str], None]] = None,
+        cancel_check: Optional[Callable[[], bool]] = None,
+    ) -> Any:
+        """
+        Safely handles HTTP 416 (Requested Range Not Satisfiable) recovery:
+        1. Logs concise detection messages.
+        2. Checks whether a valid completed final file already exists (preserves it if so).
+        3. Waits briefly to confirm subprocess/file handle release.
+        4. Identifies and removes ONLY the partial .part / .ytdl files belonging to this video.
+        5. Logs diagnostic information (without exposing sensitive tokens or URLs).
+        6. Prepares for a genuinely fresh download without resume (continuedl=False).
+
+        Returns:
+            True if partial state was safely reset and a fresh download should proceed.
+            'ALREADY_COMPLETE' if a valid final file exists and no download is needed.
+            False if recovery cannot be performed.
+        """
+        if cancel_check and cancel_check():
+            raise DownloadCancelledException("Download cancelled by user.")
+
+        if log_callback:
+            log_callback(f"[Download] HTTP 416 detected for video {video.video_id}")
+            log_callback("[Download] Partial resume state appears invalid")
+
+        # 1. Check whether a valid completed final file already exists
+        completed_file = find_completed_final_file(target_dir, video.video_id)
+        if completed_file:
+            if log_callback:
+                log_callback(f"[Download] Valid completed final file already exists: {completed_file.name}. Preserving file.")
+            # Clean up any leftover stale .part files
+            for p in find_video_partial_files(target_dir, video.video_id):
+                try:
+                    p.unlink(missing_ok=True)
+                except Exception:
+                    pass
+            return "ALREADY_COMPLETE"
+
+        if log_callback:
+            log_callback("[Download] Waiting for download process to terminate")
+
+        # 2. Brief grace period to ensure previous subprocess/handles are fully flushed
+        time.sleep(0.2)
+
+        if cancel_check and cancel_check():
+            raise DownloadCancelledException("Download cancelled by user.")
+
+        # 3. Locate partial files belonging strictly to this video
+        part_files = find_video_partial_files(target_dir, video.video_id)
+
+        # 4. Record sanitized diagnostic information
+        part_exists_str = "yes" if part_files else "no"
+        part_sizes_str = ", ".join(f"{p.name}: {p.stat().st_size} bytes" for p in part_files if p.is_file()) if part_files else "N/A"
+        if log_callback:
+            log_callback(
+                f"[Download Diagnostics] .part exists: {part_exists_str} ({part_sizes_str}) | "
+                f"final file exists: no | video ID: {video.video_id} | "
+                f"format: {format_spec or 'default'} | output: {target_dir.name}"
+            )
+
+        # 5. Safely reset the partial files
+        for p in part_files:
+            try:
+                # Ensure the path is within the target directory
+                if not p.resolve().is_relative_to(target_dir.resolve()):
+                    continue
+                # Ensure file is accessible and not actively locked
+                if p.is_file():
+                    try:
+                        with open(p, "r+b"):
+                            pass
+                    except OSError:
+                        time.sleep(0.3)
+                    p.unlink(missing_ok=True)
+                    if log_callback:
+                        log_callback(f"[Download] Removing stale partial file: {p.name}")
+            except Exception as ex:
+                if log_callback:
+                    log_callback(f"[Download] Warning: Could not remove {p.name}: {ex}")
+
+        if log_callback:
+            log_callback("[Download] Starting fresh download without resume")
+            log_callback(f"[Download] HTTP 416 recovery attempt {recovery_attempt}/{max_recovery_attempts}")
+
+        return True
+
     def download_single_video(
         self,
         video: VideoItem,
@@ -439,17 +827,18 @@ class YtDlpEngine:
                 step_label="",
             )
 
-            ydl_opts: Dict[str, Any] = {
+            ydl_opts: Dict[str, Any] = self.build_base_ydl_opts(
+                log_callback=log_callback,
+                browser_cookies=settings.browser_cookies,
+            )
+            ydl_opts.update({
                 "format": format_spec,
                 "outtmpl": outtmpl_pattern,
                 "merge_output_format": merge_ext,
                 "windowsfilenames": True,
                 "continuedl": True,
-                "quiet": True,
-                "no_warnings": True,
-                "logger": YtDlpLogger(log_callback),
                 "progress_hooks": [hook],
-            }
+            })
             if ffmpeg_location:
                 ydl_opts["ffmpeg_location"] = ffmpeg_location
             if settings.skip_existing and archive_file:
@@ -458,19 +847,79 @@ class YtDlpEngine:
             if log_callback:
                 log_callback(f"[ENGINE] Video Only: Downloading {video.title} -> container .{merge_ext}")
 
-            try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([video_url])
-                return {"success": True, "skipped": False}
-            except DownloadCancelledException:
-                raise
-            except DownloadError as e:
-                err_msg = str(e)
-                if "already been recorded in the archive" in err_msg:
-                    return {"success": True, "skipped": True}
-                raise DownloaderError(f"yt-dlp video download failed: {err_msg}") from e
-            except Exception as e:
-                raise DownloaderError(f"Unexpected video download error: {str(e)}") from e
+            finalization_retries = 0
+            MAX_FINALIZATION_RECOVERIES = 3
+            range_416_recoveries = 0
+            MAX_416_RECOVERIES = 2
+
+            while True:
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info_dict = ydl.extract_info(video_url, download=True)
+                    return {"success": True, "skipped": False, "info_dict": info_dict}
+                except DownloadCancelledException:
+                    raise
+                except DownloadError as e:
+                    err_msg = str(e)
+                    if "already been recorded in the archive" in err_msg:
+                        return {"success": True, "skipped": True, "info_dict": None}
+                    paths = parse_locked_rename_paths(err_msg)
+                    if paths and finalization_retries < MAX_FINALIZATION_RECOVERIES:
+                        src_path, dst_path = paths
+                        finalization_retries += 1
+                        rename_ok = self.safe_finalize_rename(
+                            src_path=src_path,
+                            dst_path=dst_path,
+                            raw_error=err_msg,
+                            log_callback=log_callback,
+                            cancel_check=cancel_check,
+                        )
+                        if rename_ok:
+                            if is_final_output_file(dst_path, video.video_id):
+                                if log_callback:
+                                    log_callback(f"[SUCCESS] Download completed and finalized: {dst_path.name}")
+                                if settings.skip_existing and archive_file:
+                                    try:
+                                        archive_file.parent.mkdir(parents=True, exist_ok=True)
+                                        with open(archive_file, "a", encoding="utf-8") as f:
+                                            f.write(f"youtube {video.video_id}\n")
+                                    except Exception:
+                                        pass
+                                return {"success": True, "skipped": False, "info_dict": None}
+                            continue
+
+                    if is_http_416_error(err_msg):
+                        if range_416_recoveries < MAX_416_RECOVERIES:
+                            range_416_recoveries += 1
+                            rec_status = self.recover_from_range_error(
+                                video=video,
+                                target_dir=target_dir,
+                                recovery_attempt=range_416_recoveries,
+                                max_recovery_attempts=MAX_416_RECOVERIES,
+                                format_spec=format_spec,
+                                log_callback=log_callback,
+                                cancel_check=cancel_check,
+                            )
+                            if rec_status == "ALREADY_COMPLETE":
+                                return {"success": True, "skipped": True, "info_dict": None}
+                            elif rec_status:
+                                ydl_opts["continuedl"] = False
+                                continue
+                        if log_callback:
+                            log_callback(
+                                f"[Download] HTTP 416 recovery limit reached ({range_416_recoveries}/{MAX_416_RECOVERIES}). "
+                                "Error Category: RANGE_NOT_SATISFIABLE"
+                            )
+                        raise DownloaderError(
+                            f"yt-dlp video download failed: {err_msg}",
+                            stage="Video Download / Resume",
+                            raw_error=err_msg,
+                        ) from e
+
+                    stage = "File Finalization" if paths else "video"
+                    raise DownloaderError(f"yt-dlp video download failed: {err_msg}", stage=stage, raw_error=err_msg) from e
+                except Exception as e:
+                    raise DownloaderError(f"Unexpected video download error: {str(e)}", stage="video", raw_error=str(e)) from e
 
         # 3. Mode: Audio Only (standalone audio track)
         elif mode == DownloadMode.AUDIO_ONLY:
@@ -484,17 +933,18 @@ class YtDlpEngine:
                 step_label="",
             )
 
-            ydl_opts = {
+            ydl_opts = self.build_base_ydl_opts(
+                log_callback=log_callback,
+                browser_cookies=settings.browser_cookies,
+            )
+            ydl_opts.update({
                 "format": format_spec,
                 "outtmpl": outtmpl_pattern,
                 "postprocessors": postprocessors,
                 "windowsfilenames": True,
                 "continuedl": True,
-                "quiet": True,
-                "no_warnings": True,
-                "logger": YtDlpLogger(log_callback),
                 "progress_hooks": [hook],
-            }
+            })
             if ffmpeg_location:
                 ydl_opts["ffmpeg_location"] = ffmpeg_location
             if settings.skip_existing and archive_file:
@@ -504,19 +954,79 @@ class YtDlpEngine:
             if log_callback:
                 log_callback(f"[ENGINE] Audio Only: Extracting {video.title} -> {settings.audio_format}{bitrate_info}")
 
-            try:
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([video_url])
-                return {"success": True, "skipped": False}
-            except DownloadCancelledException:
-                raise
-            except DownloadError as e:
-                err_msg = str(e)
-                if "already been recorded in the archive" in err_msg:
-                    return {"success": True, "skipped": True}
-                raise DownloaderError(f"yt-dlp audio download failed: {err_msg}") from e
-            except Exception as e:
-                raise DownloaderError(f"Unexpected audio download error: {str(e)}") from e
+            finalization_retries = 0
+            MAX_FINALIZATION_RECOVERIES = 3
+            range_416_recoveries = 0
+            MAX_416_RECOVERIES = 2
+
+            while True:
+                try:
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        info_dict = ydl.extract_info(video_url, download=True)
+                    return {"success": True, "skipped": False, "info_dict": info_dict}
+                except DownloadCancelledException:
+                    raise
+                except DownloadError as e:
+                    err_msg = str(e)
+                    if "already been recorded in the archive" in err_msg:
+                        return {"success": True, "skipped": True, "info_dict": None}
+                    paths = parse_locked_rename_paths(err_msg)
+                    if paths and finalization_retries < MAX_FINALIZATION_RECOVERIES:
+                        src_path, dst_path = paths
+                        finalization_retries += 1
+                        rename_ok = self.safe_finalize_rename(
+                            src_path=src_path,
+                            dst_path=dst_path,
+                            raw_error=err_msg,
+                            log_callback=log_callback,
+                            cancel_check=cancel_check,
+                        )
+                        if rename_ok:
+                            if is_final_output_file(dst_path, video.video_id):
+                                if log_callback:
+                                    log_callback(f"[SUCCESS] Audio download completed and finalized: {dst_path.name}")
+                                if settings.skip_existing and archive_file:
+                                    try:
+                                        archive_file.parent.mkdir(parents=True, exist_ok=True)
+                                        with open(archive_file, "a", encoding="utf-8") as f:
+                                            f.write(f"youtube {video.video_id}\n")
+                                    except Exception:
+                                        pass
+                                return {"success": True, "skipped": False, "info_dict": None}
+                            continue
+
+                    if is_http_416_error(err_msg):
+                        if range_416_recoveries < MAX_416_RECOVERIES:
+                            range_416_recoveries += 1
+                            rec_status = self.recover_from_range_error(
+                                video=video,
+                                target_dir=target_dir,
+                                recovery_attempt=range_416_recoveries,
+                                max_recovery_attempts=MAX_416_RECOVERIES,
+                                format_spec=format_spec,
+                                log_callback=log_callback,
+                                cancel_check=cancel_check,
+                            )
+                            if rec_status == "ALREADY_COMPLETE":
+                                return {"success": True, "skipped": True, "info_dict": None}
+                            elif rec_status:
+                                ydl_opts["continuedl"] = False
+                                continue
+                        if log_callback:
+                            log_callback(
+                                f"[Download] HTTP 416 recovery limit reached ({range_416_recoveries}/{MAX_416_RECOVERIES}). "
+                                "Error Category: RANGE_NOT_SATISFIABLE"
+                            )
+                        raise DownloaderError(
+                            f"yt-dlp audio download failed: {err_msg}",
+                            stage="Video Download / Resume",
+                            raw_error=err_msg,
+                        ) from e
+
+                    stage = "File Finalization" if paths else "audio"
+                    raise DownloaderError(f"yt-dlp audio download failed: {err_msg}", stage=stage, raw_error=err_msg) from e
+                except Exception as e:
+                    raise DownloaderError(f"Unexpected audio download error: {str(e)}", stage="audio", raw_error=str(e)) from e
 
         # 4. Mode: Video + Audio (both files downloaded for each item)
         else:
@@ -539,38 +1049,95 @@ class YtDlpEngine:
                 scale_factor=0.5,
                 step_label="Video",
             )
-            v_opts = {
+            v_opts = self.build_base_ydl_opts(
+                log_callback=log_callback,
+                browser_cookies=settings.browser_cookies,
+            )
+            v_opts.update({
                 "format": v_format_spec,
                 "outtmpl": v_outtmpl,
                 "merge_output_format": merge_ext,
                 "windowsfilenames": True,
                 "continuedl": True,
-                "quiet": True,
-                "no_warnings": True,
-                "logger": YtDlpLogger(log_callback),
                 "progress_hooks": [v_hook],
-            }
+            })
             if ffmpeg_location:
                 v_opts["ffmpeg_location"] = ffmpeg_location
 
             if log_callback:
                 log_callback(f"[ENGINE] Video + Audio [1/2]: Downloading video for {video.title} (.{merge_ext})")
 
-            try:
-                with yt_dlp.YoutubeDL(v_opts) as ydl:
-                    ydl.download([video_url])
-            except DownloadCancelledException:
-                raise
-            except DownloadError as e:
-                raise DownloaderError(f"yt-dlp video pass failed: {str(e)}") from e
-            except Exception as e:
-                raise DownloaderError(f"Unexpected error in video pass: {str(e)}") from e
+            info_dict = None
+            v_finalization_retries = 0
+            MAX_FINALIZATION_RECOVERIES = 3
+            v_range_416_recoveries = 0
+            MAX_416_RECOVERIES = 2
+
+            while True:
+                try:
+                    with yt_dlp.YoutubeDL(v_opts) as ydl:
+                        info_dict = ydl.extract_info(video_url, download=True)
+                    break
+                except DownloadCancelledException:
+                    raise
+                except DownloadError as e:
+                    err_msg = str(e)
+                    if "already been recorded in the archive" in err_msg:
+                        return {"success": True, "skipped": True, "info_dict": None}
+                    paths = parse_locked_rename_paths(err_msg)
+                    if paths and v_finalization_retries < MAX_FINALIZATION_RECOVERIES:
+                        src_path, dst_path = paths
+                        v_finalization_retries += 1
+                        rename_ok = self.safe_finalize_rename(
+                            src_path=src_path,
+                            dst_path=dst_path,
+                            raw_error=err_msg,
+                            log_callback=log_callback,
+                            cancel_check=cancel_check,
+                        )
+                        if rename_ok:
+                            if is_final_output_file(dst_path, video.video_id):
+                                break
+                            continue
+
+                    if is_http_416_error(err_msg):
+                        if v_range_416_recoveries < MAX_416_RECOVERIES:
+                            v_range_416_recoveries += 1
+                            rec_status = self.recover_from_range_error(
+                                video=video,
+                                target_dir=target_dir,
+                                recovery_attempt=v_range_416_recoveries,
+                                max_recovery_attempts=MAX_416_RECOVERIES,
+                                format_spec=v_format_spec,
+                                log_callback=log_callback,
+                                cancel_check=cancel_check,
+                            )
+                            if rec_status == "ALREADY_COMPLETE":
+                                break
+                            elif rec_status:
+                                v_opts["continuedl"] = False
+                                continue
+                        if log_callback:
+                            log_callback(
+                                f"[Download] HTTP 416 recovery limit reached ({v_range_416_recoveries}/{MAX_416_RECOVERIES}). "
+                                "Error Category: RANGE_NOT_SATISFIABLE"
+                            )
+                        raise DownloaderError(
+                            f"yt-dlp video pass failed: {err_msg}",
+                            stage="Video Download / Resume",
+                            raw_error=err_msg,
+                        ) from e
+
+                    stage = "File Finalization" if paths else "video"
+                    raise DownloaderError(f"yt-dlp video pass failed: {str(e)}", stage=stage, raw_error=str(e)) from e
+                except Exception as e:
+                    raise DownloaderError(f"Unexpected error in video pass: {str(e)}", stage="video", raw_error=str(e)) from e
 
             # Cancellation check between passes
             if cancel_check and cancel_check():
                 raise DownloadCancelledException("Download cancelled by user.")
 
-            # Step 2: Audio extraction
+            # Step 2: Audio extraction (reuses info_dict to avoid duplicate YouTube extraction)
             a_hook = self._create_progress_hook(
                 progress_callback=progress_callback,
                 cancel_check=cancel_check,
@@ -578,17 +1145,18 @@ class YtDlpEngine:
                 scale_factor=0.5,
                 step_label="Audio",
             )
-            a_opts = {
+            a_opts = self.build_base_ydl_opts(
+                log_callback=log_callback,
+                browser_cookies=settings.browser_cookies,
+            )
+            a_opts.update({
                 "format": a_format_spec,
                 "outtmpl": a_outtmpl,
                 "postprocessors": a_postprocessors,
                 "windowsfilenames": True,
                 "continuedl": True,
-                "quiet": True,
-                "no_warnings": True,
-                "logger": YtDlpLogger(log_callback),
                 "progress_hooks": [a_hook],
-            }
+            })
             if ffmpeg_location:
                 a_opts["ffmpeg_location"] = ffmpeg_location
 
@@ -596,15 +1164,65 @@ class YtDlpEngine:
             if log_callback:
                 log_callback(f"[ENGINE] Video + Audio [2/2]: Extracting audio for {video.title} (.{audio_ext}{bitrate_info})")
 
-            try:
-                with yt_dlp.YoutubeDL(a_opts) as ydl:
-                    ydl.download([video_url])
-            except DownloadCancelledException:
-                raise
-            except DownloadError as e:
-                raise DownloaderError(f"yt-dlp audio pass failed: {str(e)}") from e
-            except Exception as e:
-                raise DownloaderError(f"Unexpected error in audio pass: {str(e)}") from e
+            a_finalization_retries = 0
+            a_range_416_recoveries = 0
+            while True:
+                try:
+                    with yt_dlp.YoutubeDL(a_opts) as ydl:
+                        ydl.download([video_url])
+                    break
+                except DownloadCancelledException:
+                    raise
+                except DownloadError as e:
+                    err_msg = str(e)
+                    paths = parse_locked_rename_paths(err_msg)
+                    if paths and a_finalization_retries < MAX_FINALIZATION_RECOVERIES:
+                        src_path, dst_path = paths
+                        a_finalization_retries += 1
+                        rename_ok = self.safe_finalize_rename(
+                            src_path=src_path,
+                            dst_path=dst_path,
+                            raw_error=err_msg,
+                            log_callback=log_callback,
+                            cancel_check=cancel_check,
+                        )
+                        if rename_ok:
+                            if is_final_output_file(dst_path, video.video_id):
+                                break
+                            continue
+
+                    if is_http_416_error(err_msg):
+                        if a_range_416_recoveries < MAX_416_RECOVERIES:
+                            a_range_416_recoveries += 1
+                            rec_status = self.recover_from_range_error(
+                                video=video,
+                                target_dir=target_dir,
+                                recovery_attempt=a_range_416_recoveries,
+                                max_recovery_attempts=MAX_416_RECOVERIES,
+                                format_spec=a_format_spec,
+                                log_callback=log_callback,
+                                cancel_check=cancel_check,
+                            )
+                            if rec_status == "ALREADY_COMPLETE":
+                                break
+                            elif rec_status:
+                                a_opts["continuedl"] = False
+                                continue
+                        if log_callback:
+                            log_callback(
+                                f"[Download] HTTP 416 recovery limit reached ({a_range_416_recoveries}/{MAX_416_RECOVERIES}). "
+                                "Error Category: RANGE_NOT_SATISFIABLE"
+                            )
+                        raise DownloaderError(
+                            f"yt-dlp audio pass failed: {err_msg}",
+                            stage="Video Download / Resume",
+                            raw_error=err_msg,
+                        ) from e
+
+                    stage = "File Finalization" if paths else "audio"
+                    raise DownloaderError(f"yt-dlp audio pass failed: {str(e)}", stage=stage, raw_error=str(e)) from e
+                except Exception as e:
+                    raise DownloaderError(f"Unexpected error in audio pass: {str(e)}", stage="audio", raw_error=str(e)) from e
 
             # Both passes succeeded: record to archive if enabled
             if settings.skip_existing and archive_file:
@@ -616,7 +1234,7 @@ class YtDlpEngine:
                     if log_callback:
                         log_callback(f"[WARNING] Could not append to archive: {e}")
 
-            return {"success": True, "skipped": False}
+            return {"success": True, "skipped": False, "info_dict": info_dict}
 
 
 # =============================================================================
@@ -636,9 +1254,10 @@ class ChannelScanWorker(QThread):
     scan_error = Signal(str)
     scan_finished = Signal()
 
-    def __init__(self, url: str, parent: Optional[QObject] = None):
+    def __init__(self, url: str, browser_cookies: Optional[str] = None, parent: Optional[QObject] = None):
         super().__init__(parent)
         self.url = url
+        self.browser_cookies = browser_cookies
         self.engine = YtDlpEngine()
 
     def run(self) -> None:
@@ -650,6 +1269,7 @@ class ChannelScanWorker(QThread):
             videos = self.engine.extract_channel_entries(
                 url=self.url,
                 log_callback=self.log_message.emit,
+                browser_cookies=self.browser_cookies,
             )
             self.scan_completed.emit(videos)
 

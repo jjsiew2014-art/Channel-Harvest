@@ -94,21 +94,41 @@ def ensure_icon() -> None:
             print_error(f"Failed to generate icon: {e}")
 
 
+def ensure_dependencies() -> bool:
+    """Verifies that yt-dlp and yt-dlp-ejs are installed and compatible."""
+    print_step("Verifying Python Dependencies (yt-dlp, yt-dlp-ejs)")
+    try:
+        import yt_dlp
+        import yt_dlp_ejs
+        print_success(f"yt-dlp version: {getattr(yt_dlp.version, '__version__', 'unknown')}")
+        print_success(f"yt-dlp-ejs version: {getattr(yt_dlp_ejs, 'version', 'unknown')}")
+        return True
+    except ImportError as e:
+        print_error(f"Missing dependency: {e}. Installing yt-dlp-ejs...")
+        try:
+            subprocess.run([sys.executable, "-m", "pip", "install", "yt-dlp-ejs"], check=True)
+            return True
+        except Exception as install_err:
+            print_error(f"Failed to install yt-dlp-ejs: {install_err}")
+            return False
+
+
 def stage_runtime_binaries(target_dir: Path) -> bool:
     """
     Stages ffmpeg.exe, ffprobe.exe, and yt-dlp.exe into target_dir.
     Searches project runtime/, developer WinGet/Python locations, system PATH,
     or downloads official releases if missing.
     """
-    print_step("Staging Runtime Binaries (ffmpeg, ffprobe, yt-dlp)")
+    print_step("Staging Runtime Binaries (ffmpeg, ffprobe, yt-dlp, deno)")
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    binaries_to_find = ["ffmpeg.exe", "ffprobe.exe", "yt-dlp.exe"]
+    binaries_to_find = ["ffmpeg.exe", "ffprobe.exe", "yt-dlp.exe", "deno.exe"]
     all_ok = True
 
     # Search candidates
     search_paths = [
         PROJECT_ROOT / "runtime",
+        Path(os.environ.get("USERPROFILE", "")) / ".deno" / "bin",
         Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages",
         Path(os.environ.get("LOCALAPPDATA", "")) / "Python" / "pythoncore-3.14-64" / "Scripts",
         Path(sys.executable).parent / "Scripts",
@@ -147,7 +167,7 @@ def stage_runtime_binaries(target_dir: Path) -> bool:
             shutil.copy2(found_path, dest_bin)
             print_success(f"Staged {bin_name} from {found_path} -> {dest_bin}")
         else:
-            # 3. Fallback download for yt-dlp.exe
+            # 3. Fallback download for yt-dlp.exe or deno.exe
             if bin_name == "yt-dlp.exe":
                 print(f"[INFO] Downloading official yt-dlp.exe from GitHub Releases...")
                 import urllib.request
@@ -155,6 +175,20 @@ def stage_runtime_binaries(target_dir: Path) -> bool:
                 try:
                     urllib.request.urlretrieve(url, dest_bin)
                     print_success(f"Downloaded official {bin_name} to {dest_bin}")
+                except Exception as e:
+                    print_error(f"Failed to download {bin_name}: {e}")
+                    all_ok = False
+            elif bin_name == "deno.exe":
+                print(f"[INFO] Downloading official Deno runtime from GitHub Releases...")
+                import urllib.request
+                zip_temp = target_dir / "deno_temp.zip"
+                url = "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip"
+                try:
+                    urllib.request.urlretrieve(url, zip_temp)
+                    with zipfile.ZipFile(zip_temp, "r") as zf:
+                        zf.extract("deno.exe", target_dir)
+                    zip_temp.unlink(missing_ok=True)
+                    print_success(f"Downloaded and unpacked {bin_name} to {dest_bin}")
                 except Exception as e:
                     print_error(f"Failed to download {bin_name}: {e}")
                     all_ok = False
@@ -295,6 +329,9 @@ def main() -> None:
 
     # 1. Staging preparation
     ensure_icon()
+    if not ensure_dependencies():
+        print_error("Python dependencies verification failed. Aborting build.")
+        sys.exit(1)
 
     # 2. Stage local project runtime/ folder
     project_runtime = PROJECT_ROOT / "runtime"

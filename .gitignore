@@ -1,32 +1,35 @@
 # ==============================================================================
 # Channel Harvest - .gitignore
-# Prevents committing large binaries, build outputs, media, and temporary files
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
-# 1. Production Releases & Large Packaged Binaries (>100MB GitHub limit)
-# Note: Release files should be published to GitHub Releases, not git repository
+# 1. Build & Release Artifacts, Large Binaries (>100MB GitHub limit)
 # ------------------------------------------------------------------------------
-release/
 dist/
 build/
-runtime/
+release/
 bin/
+runtime/
 
-# Standalone Executables & Bundles
+# Compressed Archives & Package Formats
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.tgz
+
+# Executables & Installer Formats
 *.exe
+*.msi
+*.dmg
+*.pkg
+*.iso
 *.dll
 *.pyd
 *.so
 *.dylib
 *.bin
-*.zip
-*.7z
-*.tar
-*.tar.gz
-*.tgz
-*.rar
-*.msi
 
 # ------------------------------------------------------------------------------
 # 2. PyInstaller Build Artifacts & Intermediate Files
@@ -34,14 +37,17 @@ bin/
 *.manifest
 *.spec.bak
 *.toc
-*.pkg
 *.pyz
 
 # ------------------------------------------------------------------------------
-# 3. Downloaded Media & Temporary Download Files
-# Prevents accidentally uploading downloaded YouTube videos/audios to GitHub
+# 3. Documentation, README & Release Notes
 # ------------------------------------------------------------------------------
-# Video formats
+RELEASE_NOTES_*.md
+README*
+
+# ------------------------------------------------------------------------------
+# 4. Downloaded Media & Temporary Download Streams
+# ------------------------------------------------------------------------------
 *.mp4
 *.mkv
 *.webm
@@ -51,7 +57,6 @@ bin/
 *.flv
 *.m4v
 
-# Audio formats
 *.mp3
 *.m4a
 *.flac
@@ -60,25 +65,30 @@ bin/
 *.opus
 *.ogg
 
-# yt-dlp temporary download streams
 *.part
 *.ytdl
 *.temp
 *.tmp
 
-# Common download destination folders
+# Subtitles, descriptions, metadata & chapters from test/local runs
+*.srt
+*.vtt
+*.description
+*.metadata.txt
+*.chapters.txt
+
+# Common download output folders
 downloads/
 output/
 test_downloads/
 
 # ------------------------------------------------------------------------------
-# 4. Python Cache & Virtual Environments
+# 5. Python Bytecode, Caches & Virtual Environments
 # ------------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *$py.class
 *.pyo
-*.pyd
 
 # Virtual Environments
 venv/
@@ -89,29 +99,36 @@ ENV/
 env.bak/
 venv.bak/
 
-# Packaging caches
+# Packaging & test coverage caches
 *.egg-info/
 .installed.cfg
 *.egg
+.pytest_cache/
+.coverage
+htmlcov/
 
 # ------------------------------------------------------------------------------
-# 5. User Data, Local Settings, Archives & Logs
-# User settings are kept in %APPDATA%/ChannelHarvest, but ignore if copied locally
+# 6. Logs, Diagnostics & Local Scratch / User Data
 # ------------------------------------------------------------------------------
+*.log
+logs/
+scratch/
 settings.json
 download_archive.txt
-*.log
-scratch/
 test_*.png
+test_*.jpg
+test_*.json
+test_*.txt
 
 # ------------------------------------------------------------------------------
-# 6. IDEs, Editors & OS Generated Files
+# 7. IDEs, Editors & Operating System Clutter
 # ------------------------------------------------------------------------------
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
+*.bak
 
 # Windows
 Thumbs.db

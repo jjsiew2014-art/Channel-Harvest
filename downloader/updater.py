@@ -77,9 +77,19 @@ class YtDlpUpdater:
     GITHUB_DOWNLOAD_URL = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
     PYPI_API_URL = "https://pypi.org/pypi/yt-dlp/json"
 
+    _cached_version: Optional[str] = None
+
     @classmethod
-    def get_installed_version(cls) -> str:
+    def invalidate_cache(cls) -> None:
+        """Invalidates cached yt-dlp version."""
+        cls._cached_version = None
+
+    @classmethod
+    def get_installed_version(cls, force_refresh: bool = False) -> str:
         """Returns the currently installed yt-dlp version string."""
+        if not force_refresh and cls._cached_version is not None:
+            return cls._cached_version
+
         # 1. Check bundled or user-updated binary version
         bundled_exe = get_bundled_executable("yt-dlp.exe")
         if bundled_exe and bundled_exe.exists():
@@ -101,12 +111,14 @@ class YtDlpUpdater:
                     startupinfo=startupinfo,
                 )
                 if proc.returncode == 0 and proc.stdout.strip():
-                    return proc.stdout.strip().splitlines()[0]
+                    cls._cached_version = proc.stdout.strip().splitlines()[0]
+                    return cls._cached_version
             except Exception:
                 pass
 
         # 2. Fallback to Python module version
-        return getattr(yt_dlp.version, "__version__", "Unknown")
+        cls._cached_version = getattr(yt_dlp.version, "__version__", "Unknown")
+        return cls._cached_version
 
     @classmethod
     def check_latest_version(cls, timeout: int = 8) -> Tuple[bool, str, str, str]:
@@ -196,6 +208,7 @@ class YtDlpUpdater:
                 "--upgrade",
                 "--no-warn-script-location",
                 "yt-dlp",
+                "yt-dlp-ejs",
             ]
             creation_flags = 0
             if sys.platform == "win32":
@@ -214,7 +227,8 @@ class YtDlpUpdater:
                     importlib.reload(yt_dlp.version)
                 except Exception:
                     pass
-                new_ver = cls.get_installed_version()
+                cls.invalidate_cache()
+                new_ver = cls.get_installed_version(force_refresh=True)
                 _log_updater(f"[INSTALL SUCCESS] yt-dlp updated via pip to {new_ver}.")
                 return True, new_ver, ""
             else:
@@ -345,6 +359,7 @@ class YtDlpUpdater:
             except Exception as pkg_err:
                 _log_updater(f"[INSTALL INFO] Python package update skipped ({pkg_err}), CLI binary is ready.")
 
+            cls.invalidate_cache()
             return True, new_binary_version, ""
 
         except Exception as e:

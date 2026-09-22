@@ -26,25 +26,44 @@ class SettingsManager:
 
     # Safe default values for beginner users
     DEFAULT_SETTINGS: Dict[str, Any] = {
-        "download_mode": "Video + Audio",
+        "download_mode": "Video Only",
         "download_folder": str(Path.home() / "Downloads" / "Channel Harvest"),
-        "format": "MP4",
+        "format": "MOV",
         "quality": "1080p",
         "bitrate": "Best Available",
-        "audio_format": "MP3",
+        "audio_format": "WAV",
         "audio_bitrate": "Best Available",
-        "create_channel_folder": False,
-        "skip_existing": True,
-        "window_width": 1050,
-        "window_height": 800,
+        "download_subtitles": False,
+        "subtitle_source": "Best Available",
+        "subtitle_language": "Chinese (中文)",
+        "subtitle_format": "SRT",
+        "download_thumbnail": False,
+        "thumbnail_format": "JPG",
+        "save_description": False,
+        "save_metadata": False,
+        "save_chapters": False,
+        "create_channel_folder": True,
+        "create_individual_video_folders": False,
+
+        "skip_existing": False,
+        "window_width": 1200,
+        "window_height": 960,
         "last_channel_url": "https://www.youtube.com/@PythonSimplified",
         "theme": "System",
+        "language": "en",
+        "auth_method": "none",
+        "browser_cookies": "none",
+        "browser_profile": "Default",
+        "custom_cookie_file": "",
+        "last_auth_status": "NOT_CONFIGURED",
         "auto_check_ytdlp_updates": True,
+        "auto_check_runtime_updates": True,
         "last_ytdlp_update_check": 0.0,
+        "last_runtime_update_check": 0.0,
     }
 
-    def __init__(self):
-        self._settings_path = get_settings_file()
+    def __init__(self, settings_path: Optional[Path] = None):
+        self._settings_path = settings_path or get_settings_file()
         self._data: Dict[str, Any] = dict(self.DEFAULT_SETTINGS)
         self.load()
 
@@ -52,6 +71,8 @@ class SettingsManager:
         """Loads configuration from JSON file or initializes with defaults."""
         if not self._settings_path.exists():
             self.save()
+            from core.i18n import I18nManager
+            I18nManager.set_language(self._data.get("language", "en"))
             return self._data
 
         try:
@@ -64,6 +85,18 @@ class SettingsManager:
             # If the file is corrupted, keep existing in-memory defaults
             print(f"[WARNING] Could not read settings file, using defaults: {e}")
 
+        # Backward compatibility for auth_method: infer from browser_cookies if missing
+        if "auth_method" not in loaded if 'loaded' in locals() and isinstance(loaded, dict) else True:
+            b_cookies = str(self._data.get("browser_cookies", "none")).lower().strip()
+            if b_cookies == "custom_file":
+                self._data["auth_method"] = "custom_file"
+            elif b_cookies in ("chrome", "edge", "firefox", "brave", "opera", "vivaldi"):
+                self._data["auth_method"] = "browser"
+            else:
+                self._data["auth_method"] = "none"
+
+        from core.i18n import I18nManager
+        I18nManager.set_language(self._data.get("language", "en"))
         return self._data
 
     def save(self) -> bool:

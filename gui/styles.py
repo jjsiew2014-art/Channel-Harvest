@@ -67,7 +67,7 @@ def detect_windows_theme() -> str:
 _LIGHT_BASE = """
 /* Global Light Application Style */
 QWidget {
-    font-family: "Segoe UI", "Segoe UI Variable", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+    font-family: __FONT_FAMILY__;
     font-size: 13px;
     color: #0f172a;
     background-color: #f8fafc;
@@ -88,11 +88,78 @@ QLabel {
 }
 
 /* Application Header Titles */
-QLabel#appTitleLabel {
+QLabel#appTitleLabel,
+QLabel#summaryTitleLabel {
     font-size: 20px;
     font-weight: 700;
     color: #0f172a;
     background-color: transparent;
+}
+
+/* Summary Dialog Elements */
+QLabel#summaryTotalVal {
+    font-weight: 700;
+    color: #1e293b;
+}
+
+QLabel#summaryCompletedVal {
+    font-weight: 700;
+    color: #16a34a;
+}
+
+QLabel#summarySkippedVal {
+    font-weight: 700;
+    color: #64748b;
+}
+
+QLabel#summaryFailedVal {
+    font-weight: 700;
+    color: #dc2626;
+}
+
+QLabel#summaryFolderInfo {
+    color: #475569;
+    font-size: 12px;
+    padding: 4px;
+}
+
+/* Error Details Dialog Elements */
+QLabel#errorDialogTitle {
+    font-size: 18px;
+    font-weight: 700;
+    color: #dc2626;
+    background-color: transparent;
+}
+
+QLabel#errorVideoInfoLabel {
+    font-size: 13px;
+    color: #1e293b;
+}
+
+QLabel#errorReasonLabel {
+    font-size: 13px;
+    color: #0f172a;
+}
+
+QLabel#errorActionLabel {
+    font-size: 13px;
+    color: #334155;
+}
+
+QLabel#errorTechMetaLabel {
+    font-size: 11px;
+    font-weight: 600;
+    color: #64748b;
+}
+
+QTextEdit#errorTechTextEdit {
+    background-color: #f1f5f9;
+    color: #334155;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-family: Consolas, monospace;
+    font-size: 11px;
+    padding: 6px;
 }
 
 QLabel#appSubtitleLabel {
@@ -105,13 +172,13 @@ QLabel#appSubtitleLabel {
 /* Section Group Boxes / Cards */
 QGroupBox {
     background-color: #ffffff;
-    border: 1px solid #e2e8f0;
+    border: 1px solid #cbd5e1;
     border-radius: 8px;
-    margin-top: 14px;
-    padding: 10px 12px 8px 12px;
+    margin-top: 20px;
+    padding: 12px 14px 10px 14px;
     font-weight: 700;
-    font-size: 11px;
-    color: #475569;
+    font-size: 14px;
+    color: #0f172a;
 }
 
 QGroupBox::title {
@@ -119,10 +186,110 @@ QGroupBox::title {
     subcontrol-position: top left;
     left: 12px;
     top: 2px;
-    padding: 0 4px;
-    background-color: #ffffff;
-    color: #475569;
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 14px;
     letter-spacing: 0.5px;
+}
+
+/* Coordinated Blue Tonal Progression - Light Theme */
+QGroupBox#urlGroupBox {
+    border: 1px solid #cbd5e1;
+    border-left: 4px solid #3b82f6;
+}
+QGroupBox#urlGroupBox::title {
+    color: #1e40af;
+    background-color: #f1f5f9;
+}
+
+QGroupBox#videosGroupBox {
+    border: 1px solid #93c5fd;
+    border-left: 4px solid #0066cc;
+}
+QGroupBox#videosGroupBox::title {
+    color: #0052a3;
+    background-color: #eff6ff;
+}
+
+QGroupBox#downloadGroupBox {
+    border: 1px solid #cbd5e1;
+    border-left: 4px solid #2563eb;
+}
+QGroupBox#downloadGroupBox::title {
+    color: #1d4ed8;
+    background-color: #f0f7ff;
+}
+
+QGroupBox#progressGroupBox {
+    border: 1px solid #bae6fd;
+    border-left: 4px solid #0284c7;
+}
+QGroupBox#progressGroupBox::title {
+    color: #0369a1;
+    background-color: #f0f9ff;
+}
+
+QGroupBox#logGroupBox {
+    border: 1px solid #e2e8f0;
+    border-left: 4px solid #64748b;
+}
+QGroupBox#logGroupBox::title {
+    color: #475569;
+    background-color: #f8fafc;
+}
+
+/* Sub-Section Cards inside DOWNLOAD OPTION */
+QFrame#subSectionCard {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 10px 12px;
+}
+
+QLabel#subSectionTitle {
+    color: #1e3a8a;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    background: transparent;
+}
+
+QLabel#formLabel {
+    font-size: 11px;
+    font-weight: 600;
+    color: #475569;
+    background: transparent;
+}
+
+QLabel#subGroupTitle {
+    font-size: 10px;
+    font-weight: 700;
+    color: #64748b;
+    letter-spacing: 0.5px;
+    background: transparent;
+    padding-top: 4px;
+}
+
+/* Empty State Widget in Available Videos */
+QWidget#emptyStateWidget {
+    background-color: #ffffff;
+    border: 1px dashed #cbd5e1;
+    border-radius: 6px;
+}
+
+QLabel#emptyStateTitle {
+    font-size: 14px;
+    font-weight: 600;
+    color: #475569;
+    background: transparent;
+}
+
+QLabel#emptyStateSubtitle {
+    font-size: 12px;
+    font-weight: 400;
+    color: #94a3b8;
+    background: transparent;
 }
 
 /* Section Header Labels */
@@ -281,24 +448,24 @@ QPushButton#primaryButton:disabled, QPushButton#scanButton:disabled {
     color: #ffffff;
 }
 
-/* Main Start Download Button */
+/* Main Start Download Button (Primary Blue) */
 QPushButton#downloadButton {
     background-color: #0066cc;
-    border: 1px solid #005bb5;
+    border: 1px solid #0052a3;
+    border-radius: 6px;
     color: #ffffff;
     font-weight: 600;
-    font-size: 14px;
-    padding: 8px 24px;
-    border-radius: 6px;
+    font-size: 13px;
+    padding: 6px 14px;
 }
 
 QPushButton#downloadButton:hover {
-    background-color: #005bb5;
-    border-color: #004c99;
+    background-color: #0052a3;
+    border-color: #003d7a;
 }
 
 QPushButton#downloadButton:pressed {
-    background-color: #004c99;
+    background-color: #003d7a;
 }
 
 QPushButton#downloadButton:disabled {
@@ -307,18 +474,115 @@ QPushButton#downloadButton:disabled {
     color: #ffffff;
 }
 
-/* Secondary Buttons */
-QPushButton#secondaryButton {
-    background-color: #ffffff;
-    border: 1px solid #cbd5e1;
-    color: #334155;
-    font-weight: 500;
+/* Pause Button (Warm Amber Warning Tone) */
+QPushButton#pauseButton {
+    background-color: #fffbeb;
+    border: 1px solid #fcd34d;
+    border-radius: 6px;
+    color: #92400e;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 6px 12px;
 }
 
-QPushButton#secondaryButton:hover {
+QPushButton#pauseButton:hover {
+    background-color: #fef3c7;
+    border-color: #f59e0b;
+    color: #78350f;
+}
+
+QPushButton#pauseButton:pressed {
+    background-color: #fde68a;
+    border-color: #d97706;
+}
+
+QPushButton#pauseButton:disabled {
+    background-color: #f8fafc;
+    border-color: #e2e8f0;
+    color: #94a3b8;
+}
+
+/* Resume Button (Green Success Tone) */
+QPushButton#resumeButton {
+    background-color: #f0fdf4;
+    border: 1px solid #86efac;
+    border-radius: 6px;
+    color: #166534;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 6px 12px;
+}
+
+QPushButton#resumeButton:hover {
+    background-color: #dcfce7;
+    border-color: #4ade80;
+    color: #14532d;
+}
+
+QPushButton#resumeButton:pressed {
+    background-color: #bbf7d0;
+    border-color: #22c55e;
+}
+
+QPushButton#resumeButton:disabled {
+    background-color: #f8fafc;
+    border-color: #e2e8f0;
+    color: #94a3b8;
+}
+
+/* Cancel Button (Destructive Red Tone) */
+QPushButton#cancelButton {
+    background-color: #fef2f2;
+    border: 1px solid #fca5a5;
+    border-radius: 6px;
+    color: #991b1b;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 6px 12px;
+}
+
+QPushButton#cancelButton:hover {
+    background-color: #fee2e2;
+    border-color: #f87171;
+    color: #7f1d1d;
+}
+
+QPushButton#cancelButton:pressed {
+    background-color: #fecaca;
+    border-color: #ef4444;
+}
+
+QPushButton#cancelButton:disabled {
+    background-color: #f8fafc;
+    border-color: #e2e8f0;
+    color: #94a3b8;
+}
+
+/* Open Folder & Secondary Buttons (Neutral Slate Utility Tone) */
+QPushButton#openFolderButton, QPushButton#secondaryButton {
+    background-color: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    color: #334155;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 6px 14px;
+}
+
+QPushButton#openFolderButton:hover, QPushButton#secondaryButton:hover {
     background-color: #f1f5f9;
     border-color: #94a3b8;
     color: #0f172a;
+}
+
+QPushButton#openFolderButton:pressed, QPushButton#secondaryButton:pressed {
+    background-color: #e2e8f0;
+}
+
+QPushButton#openFolderButton:disabled, QPushButton#secondaryButton:disabled {
+    background-color: #f8fafc;
+    border-color: #e2e8f0;
+    color: #94a3b8;
 }
 
 /* Settings Button (Top-Right Header) */
@@ -474,6 +738,48 @@ QCheckBox::indicator:checked {
     image: url("__CHECKMARK_PATH__");
 }
 
+/* Radio Buttons */
+QRadioButton {
+    spacing: 8px;
+    font-size: 13px;
+    color: #1e293b;
+    background: transparent;
+}
+
+QRadioButton:hover {
+    color: #0066cc;
+}
+
+QRadioButton::indicator {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #94a3b8;
+    border-radius: 9px;
+    background-color: #ffffff;
+}
+
+QRadioButton::indicator:hover {
+    border-color: #0066cc;
+}
+
+QRadioButton::indicator:checked {
+    border: 2px solid #0066cc;
+    background-color: qradialgradient(
+        cx: 0.5, cy: 0.5, radius: 0.5,
+        fx: 0.5, fy: 0.5,
+        stop: 0 #0066cc,
+        stop: 0.48 #0066cc,
+        stop: 0.54 #ffffff,
+        stop: 1 #ffffff
+    );
+}
+
+QRadioButton::indicator:disabled {
+    border-color: #cbd5e1;
+    background-color: #f1f5f9;
+}
+
+QTableView::indicator,
 QTableWidget::indicator {
     width: 17px;
     height: 17px;
@@ -482,10 +788,12 @@ QTableWidget::indicator {
     background-color: #ffffff;
 }
 
+QTableView::indicator:hover,
 QTableWidget::indicator:hover {
     border-color: #0066cc;
 }
 
+QTableView::indicator:checked,
 QTableWidget::indicator:checked {
     background-color: #0066cc;
     border-color: #0066cc;
@@ -619,7 +927,7 @@ QMenu::separator {
 _DARK_BASE = """
 /* Global Dark Application Style */
 QWidget {
-    font-family: "Segoe UI", "Segoe UI Variable", -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+    font-family: __FONT_FAMILY__;
     font-size: 13px;
     color: #f8fafc;
     background-color: #0f172a;
@@ -640,11 +948,78 @@ QLabel {
 }
 
 /* Application Header Titles */
-QLabel#appTitleLabel {
+QLabel#appTitleLabel,
+QLabel#summaryTitleLabel {
     font-size: 20px;
     font-weight: 700;
     color: #f8fafc;
     background-color: transparent;
+}
+
+/* Summary Dialog Elements */
+QLabel#summaryTotalVal {
+    font-weight: 700;
+    color: #f1f5f9;
+}
+
+QLabel#summaryCompletedVal {
+    font-weight: 700;
+    color: #22c55e;
+}
+
+QLabel#summarySkippedVal {
+    font-weight: 700;
+    color: #94a3b8;
+}
+
+QLabel#summaryFailedVal {
+    font-weight: 700;
+    color: #ef4444;
+}
+
+QLabel#summaryFolderInfo {
+    color: #94a3b8;
+    font-size: 12px;
+    padding: 4px;
+}
+
+/* Error Details Dialog Elements */
+QLabel#errorDialogTitle {
+    font-size: 18px;
+    font-weight: 700;
+    color: #f87171;
+    background-color: transparent;
+}
+
+QLabel#errorVideoInfoLabel {
+    font-size: 13px;
+    color: #f1f5f9;
+}
+
+QLabel#errorReasonLabel {
+    font-size: 13px;
+    color: #f8fafc;
+}
+
+QLabel#errorActionLabel {
+    font-size: 13px;
+    color: #cbd5e1;
+}
+
+QLabel#errorTechMetaLabel {
+    font-size: 11px;
+    font-weight: 600;
+    color: #94a3b8;
+}
+
+QTextEdit#errorTechTextEdit {
+    background-color: #0b1120;
+    color: #94a3b8;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    font-family: Consolas, monospace;
+    font-size: 11px;
+    padding: 6px;
 }
 
 QLabel#appSubtitleLabel {
@@ -656,14 +1031,14 @@ QLabel#appSubtitleLabel {
 
 /* Section Group Boxes / Cards */
 QGroupBox {
-    background-color: #1e293b;
-    border: 1px solid #334155;
+    background-color: #131c2c;
+    border: 1px solid #223249;
     border-radius: 8px;
-    margin-top: 14px;
-    padding: 10px 12px 8px 12px;
+    margin-top: 20px;
+    padding: 12px 14px 10px 14px;
     font-weight: 700;
-    font-size: 11px;
-    color: #94a3b8;
+    font-size: 14px;
+    color: #f8fafc;
 }
 
 QGroupBox::title {
@@ -671,10 +1046,110 @@ QGroupBox::title {
     subcontrol-position: top left;
     left: 12px;
     top: 2px;
-    padding: 0 4px;
-    background-color: #1e293b;
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.5px;
+}
+
+/* Coordinated Blue Tonal Progression - Dark Theme */
+QGroupBox#urlGroupBox {
+    border: 1px solid #223249;
+    border-left: 4px solid #3b82f6;
+}
+QGroupBox#urlGroupBox::title {
+    color: #60a5fa;
+    background-color: #182438;
+}
+
+QGroupBox#videosGroupBox {
+    border: 1px solid #1d4ed8;
+    border-left: 4px solid #38bdf8;
+}
+QGroupBox#videosGroupBox::title {
+    color: #38bdf8;
+    background-color: #1a2942;
+}
+
+QGroupBox#downloadGroupBox {
+    border: 1px solid #1e3a5f;
+    border-left: 4px solid #2563eb;
+}
+QGroupBox#downloadGroupBox::title {
+    color: #60a5fa;
+    background-color: #172438;
+}
+
+QGroupBox#progressGroupBox {
+    border: 1px solid #075985;
+    border-left: 4px solid #0ea5e9;
+}
+QGroupBox#progressGroupBox::title {
+    color: #7dd3fc;
+    background-color: #132a42;
+}
+
+QGroupBox#logGroupBox {
+    border: 1px solid #1e293b;
+    border-left: 4px solid #475569;
+}
+QGroupBox#logGroupBox::title {
+    color: #94a3b8;
+    background-color: #162032;
+}
+
+/* Sub-Section Cards inside DOWNLOAD OPTION */
+QFrame#subSectionCard {
+    background-color: #0d1522;
+    border: 1px solid #1c2a3d;
+    border-radius: 6px;
+    padding: 10px 12px;
+}
+
+QLabel#subSectionTitle {
+    color: #93c5fd;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.6px;
+    background: transparent;
+}
+
+QLabel#formLabel {
+    font-size: 11px;
+    font-weight: 600;
+    color: #94a3b8;
+    background: transparent;
+}
+
+QLabel#subGroupTitle {
+    font-size: 10px;
+    font-weight: 700;
     color: #94a3b8;
     letter-spacing: 0.5px;
+    background: transparent;
+    padding-top: 4px;
+}
+
+/* Empty State Widget in Available Videos */
+QWidget#emptyStateWidget {
+    background-color: #172033;
+    border: 1px dashed #334155;
+    border-radius: 6px;
+}
+
+QLabel#emptyStateTitle {
+    font-size: 14px;
+    font-weight: 600;
+    color: #cbd5e1;
+    background: transparent;
+}
+
+QLabel#emptyStateSubtitle {
+    font-size: 12px;
+    font-weight: 400;
+    color: #64748b;
+    background: transparent;
 }
 
 /* Section Header Labels */
@@ -833,15 +1308,15 @@ QPushButton#primaryButton:disabled, QPushButton#scanButton:disabled {
     color: #64748b;
 }
 
-/* Main Start Download Button */
+/* Main Start Download Button (Primary Blue) */
 QPushButton#downloadButton {
     background-color: #0284c7;
     border: 1px solid #0369a1;
+    border-radius: 6px;
     color: #ffffff;
     font-weight: 600;
-    font-size: 14px;
-    padding: 8px 24px;
-    border-radius: 6px;
+    font-size: 13px;
+    padding: 6px 14px;
 }
 
 QPushButton#downloadButton:hover {
@@ -859,18 +1334,112 @@ QPushButton#downloadButton:disabled {
     color: #64748b;
 }
 
-/* Secondary Buttons */
-QPushButton#secondaryButton {
-    background-color: #1e293b;
-    border: 1px solid #334155;
-    color: #f1f5f9;
-    font-weight: 500;
+/* Pause Button (Warm Amber Warning Tone) */
+QPushButton#pauseButton {
+    background-color: #451a03;
+    border: 1px solid #b45309;
+    border-radius: 6px;
+    color: #fde68a;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 6px 12px;
 }
 
-QPushButton#secondaryButton:hover {
+QPushButton#pauseButton:hover {
+    background-color: #78350f;
+    border-color: #d97706;
+    color: #fef3c7;
+}
+
+QPushButton#pauseButton:pressed {
+    background-color: #92400e;
+}
+
+QPushButton#pauseButton:disabled {
+    background-color: #0f172a;
+    border-color: #334155;
+    color: #64748b;
+}
+
+/* Resume Button (Green Success Tone) */
+QPushButton#resumeButton {
+    background-color: #14532d;
+    border: 1px solid #15803d;
+    border-radius: 6px;
+    color: #86efac;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 6px 12px;
+}
+
+QPushButton#resumeButton:hover {
+    background-color: #166534;
+    border-color: #22c55e;
+    color: #bbf7d0;
+}
+
+QPushButton#resumeButton:pressed {
+    background-color: #15803d;
+}
+
+QPushButton#resumeButton:disabled {
+    background-color: #0f172a;
+    border-color: #334155;
+    color: #64748b;
+}
+
+/* Cancel Button (Destructive Red Tone) */
+QPushButton#cancelButton {
+    background-color: #7f1d1d;
+    border: 1px solid #b91c1c;
+    border-radius: 6px;
+    color: #fca5a5;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 6px 12px;
+}
+
+QPushButton#cancelButton:hover {
+    background-color: #991b1b;
+    border-color: #dc2626;
+    color: #fecaca;
+}
+
+QPushButton#cancelButton:pressed {
+    background-color: #b91c1c;
+}
+
+QPushButton#cancelButton:disabled {
+    background-color: #0f172a;
+    border-color: #334155;
+    color: #64748b;
+}
+
+/* Open Folder & Secondary Buttons (Neutral Slate Utility Tone) */
+QPushButton#openFolderButton, QPushButton#secondaryButton {
+    background-color: #1e293b;
+    border: 1px solid #475569;
+    border-radius: 6px;
+    color: #f1f5f9;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 6px 14px;
+}
+
+QPushButton#openFolderButton:hover, QPushButton#secondaryButton:hover {
     background-color: #334155;
-    border-color: #475569;
+    border-color: #64748b;
     color: #ffffff;
+}
+
+QPushButton#openFolderButton:pressed, QPushButton#secondaryButton:pressed {
+    background-color: #273549;
+}
+
+QPushButton#openFolderButton:disabled, QPushButton#secondaryButton:disabled {
+    background-color: #0f172a;
+    border-color: #334155;
+    color: #64748b;
 }
 
 /* Settings Button (Top-Right Header) */
@@ -1026,6 +1595,48 @@ QCheckBox::indicator:checked {
     image: url("__CHECKMARK_PATH__");
 }
 
+/* Radio Buttons */
+QRadioButton {
+    spacing: 8px;
+    font-size: 13px;
+    color: #f1f5f9;
+    background: transparent;
+}
+
+QRadioButton:hover {
+    color: #38bdf8;
+}
+
+QRadioButton::indicator {
+    width: 16px;
+    height: 16px;
+    border: 2px solid #64748b;
+    border-radius: 9px;
+    background-color: #1e293b;
+}
+
+QRadioButton::indicator:hover {
+    border-color: #38bdf8;
+}
+
+QRadioButton::indicator:checked {
+    border: 2px solid #38bdf8;
+    background-color: qradialgradient(
+        cx: 0.5, cy: 0.5, radius: 0.5,
+        fx: 0.5, fy: 0.5,
+        stop: 0 #38bdf8,
+        stop: 0.48 #38bdf8,
+        stop: 0.54 #1e293b,
+        stop: 1 #1e293b
+    );
+}
+
+QRadioButton::indicator:disabled {
+    border-color: #334155;
+    background-color: #0f172a;
+}
+
+QTableView::indicator,
 QTableWidget::indicator {
     width: 17px;
     height: 17px;
@@ -1034,10 +1645,12 @@ QTableWidget::indicator {
     background-color: #1e293b;
 }
 
+QTableView::indicator:hover,
 QTableWidget::indicator:hover {
     border-color: #0284c7;
 }
 
+QTableView::indicator:checked,
 QTableWidget::indicator:checked {
     background-color: #0284c7;
     border-color: #0284c7;
@@ -1167,16 +1780,31 @@ QMenu::separator {
 """
 
 
+def get_font_family(lang: Optional[str] = None) -> str:
+    """Returns the typography font stack based on the active application language or specified lang code."""
+    try:
+        from core.i18n import I18nManager
+        is_zh = (lang == I18nManager.LANG_ZH) if lang is not None else I18nManager.is_chinese()
+        if is_zh:
+            return '"Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", "Segoe UI Variable", -apple-system, BlinkMacSystemFont, Roboto, sans-serif'
+    except Exception:
+        pass
+    return '"Segoe UI", "Segoe UI Variable", -apple-system, BlinkMacSystemFont, Roboto, sans-serif'
+
+
 def get_theme_stylesheet(effective_theme: str) -> str:
     """Returns the compiled stylesheet for the specified effective theme (Light or Dark)."""
+    font_stack = get_font_family()
     if effective_theme == ThemeMode.DARK:
         return (
             _DARK_BASE
+            .replace("__FONT_FAMILY__", font_stack)
             .replace("__ARROW_DOWN_PATH__", _arrow_down_dark_path)
             .replace("__CHECKMARK_PATH__", _checkmark_path)
         )
     return (
         _LIGHT_BASE
+        .replace("__FONT_FAMILY__", font_stack)
         .replace("__ARROW_DOWN_PATH__", _arrow_down_light_path)
         .replace("__CHECKMARK_PATH__", _checkmark_path)
     )
@@ -1232,6 +1860,11 @@ class ThemeManager:
             cls._listeners.remove(callback)
 
     @classmethod
+    def _on_language_changed(cls, lang: str) -> None:
+        """Automatically updates typography font family and stylesheets when UI language changes."""
+        cls.apply_theme(cls._current_preference)
+
+    @classmethod
     def apply_theme(cls, preference: str, app: Optional[QApplication] = None) -> str:
         """
         Applies the selected theme preference globally to the QApplication.
@@ -1248,6 +1881,15 @@ class ThemeManager:
         if qapp:
             stylesheet = get_theme_stylesheet(effective)
             qapp.setStyleSheet(stylesheet)
+            from PySide6.QtGui import QFont
+            try:
+                from core.i18n import I18nManager
+                if I18nManager.is_chinese():
+                    qapp.setFont(QFont("Noto Sans SC"))
+                else:
+                    qapp.setFont(QFont("Segoe UI"))
+            except Exception:
+                pass
 
         # Notify registered listeners
         for listener in list(cls._listeners):
@@ -1257,3 +1899,12 @@ class ThemeManager:
                 pass
 
         return effective
+
+
+# Automatically listen for language changes to swap font family seamlessly
+try:
+    from core.i18n import I18nManager
+    I18nManager.register_listener(ThemeManager._on_language_changed)
+except Exception:
+    pass
+

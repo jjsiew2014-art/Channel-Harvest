@@ -7,11 +7,11 @@
 <p align="center">
   <strong>A modern, high-performance YouTube channel & playlist downloader</strong><br/>
   Harvest your channel. Keep every video — with full media, subtitles, thumbnails, and metadata archival.<br/>
-  Built with Python, PySide6 (Qt for Python), yt-dlp, and FFmpeg.
+  Built with Python, PySide6 (Qt for Python), yt-dlp, Deno, and FFmpeg.
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.1.0-6C63FF?style=flat-square"/>
+  <img alt="Version" src="https://img.shields.io/badge/version-1.2.0-6C63FF?style=flat-square"/>
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-blue?style=flat-square"/>
   <img alt="License" src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square"/>
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-F59E0B?style=flat-square"/>
@@ -22,6 +22,21 @@
 
 ## 🌟 Key Features
 
+* **EJS & Deno JavaScript Challenge Solver**:
+  * Bundles a dedicated modern JavaScript runtime engine (`deno.exe`) directly in `runtime/` to solve YouTube's latest client-side signature decryption (n-sig challenge) and Embedded JavaScript (EJS) player routines without external Node.js or Deno installations.
+  * Completely resolves YouTube download throttling, signature calculation failures, and HTTP 403 Forbidden errors.
+* **Centralized Runtime Manager**:
+  * Real-time visual status dashboard integrated into Settings to inspect operational readiness, paths, and versions of all core components: `yt-dlp`, `EJS` (JavaScript Engine), `Deno`, and `FFmpeg`.
+  * Features an asynchronous in-app background updater for `yt-dlp` requiring zero administrator privileges, backed by multi-level version caching for instantaneous dialog response.
+* **YouTube Authentication & Cookie Management**:
+  * Direct automatic cookie extraction from installed Windows desktop browsers (Google Chrome, Microsoft Edge, Mozilla Firefox, Brave, Opera, Vivaldi).
+  * Supports custom Netscape format `cookies.txt` files with automated syntax validation, expiration warnings, and security sanitization.
+  * Built-in live authentication verification tool to test YouTube login and premium access status before starting batch downloads.
+  * Unlocks age-restricted content, private playlists, members-only uploads, and unlisted high-definition streams.
+* **Diagnostic Report & Troubleshooting**:
+  * One-click system diagnostic generator compiling hardware architecture, Windows OS build, Python runtime, component versions, network connectivity, and cookie authentication status.
+  * Dedicated "Copy Information" button to paste formatted diagnostic reports directly into GitHub Issues for rapid debugging.
+  * Direct "Open Log Folder" shortcut to instantly access `%APPDATA%\ChannelHarvest\logs` and sanitized `channel_harvest_error.log`.
 * **High-Speed Channel & Playlist Scanning**: Fast metadata extraction without UI freezes, featuring real-time title search and multi-select queue controls.
 * **Flexible Download Modes**:
   * **Video + Audio**: High-definition video with crystal-clear merged audio (MOV, MP4, MKV, WEBM).
@@ -37,25 +52,13 @@
   * **Save Metadata**: Converts complete video metadata into a structured, human-readable `.metadata.txt` record (statistics, tags, uploader info).
   * **Save Chapters**: Extracts timestamped chapter navigation markers into clean `.chapters.txt` files.
 * **Individual Video Folder Organization**: Optionally organizes each video and all its related assets (media, `.srt`, thumbnail, `.description`, `.metadata.txt`, `.chapters.txt`) into its own dedicated subfolder with automatic duplicate title collision protection.
+* **Windows Taskbar Progress (ITaskbarList3)**: Real-time download progress tracking rendered directly on the Windows taskbar application icon with dynamic color status (green for active, yellow for paused, red for errors).
+* **Smart Error Classification & Actionable Guidance**: Intelligent error classifier analyzing download failures into human-readable diagnoses with clear, actionable solutions and dedicated error log recording.
 * **Independent Skip Verification**: Intelligently skips already-downloaded files, allowing you to fetch missing subtitles, thumbnails, or metadata for existing local archives without re-downloading media streams.
-* * **EJS & Deno JavaScript Challenge Solver**:
-  * Bundles a dedicated modern JavaScript runtime engine (`deno.exe`) directly in `runtime/` to solve YouTube's latest client-side signature decryption (n-sig challenge) and Embedded JavaScript (EJS) player routines without external Node.js or Deno installations.
-  * Completely resolves YouTube download throttling, signature calculation failures, and HTTP 403 Forbidden errors.
-* **Centralized Runtime Manager**:
-  * Real-time visual status dashboard integrated into Settings to inspect operational readiness, paths, and versions of all core components: `yt-dlp`, `EJS` (JavaScript Engine), `Deno`, and `FFmpeg`.
-  * Features an asynchronous in-app background updater for `yt-dlp` requiring zero administrator privileges, backed by multi-level version caching for instantaneous dialog response.
-* **YouTube Authentication & Cookie Management**:
-  * Direct automatic cookie extraction from installed Windows desktop browsers (Google Chrome, Microsoft Edge, Mozilla Firefox, Brave, Opera, Vivaldi).
-  * Supports custom Netscape format `cookies.txt` files with automated syntax validation, expiration warnings, and security sanitization.
-  * Built-in live authentication verification tool to test YouTube login and premium access status before starting batch downloads.
-  * Unlocks age-restricted content, private playlists, members-only uploads, and unlisted high-definition streams.
-* **Diagnostic Report & Troubleshooting**:
-  * One-click system diagnostic generator compiling hardware architecture, Windows OS build, Python runtime, component versions, network connectivity, and cookie authentication status.
-  * Dedicated "Copy Information" button to paste formatted diagnostic reports directly into GitHub Issues for rapid debugging.
-  * Direct "Open Log Folder" shortcut to instantly access `%APPDATA%\ChannelHarvest\logs` and sanitized `channel_harvest_error.log`.
 * **Bilingual Language Support (English & 简体中文)**: Switch dynamically between English and Simplified Chinese directly from Settings, updating all labels, dialogs, and controls in real time without restart.
-* **Polished Modern Windows UI**: Desktop-first design featuring native Dark and Light theme switching, balanced settings layout, ergonomic vector action buttons, and zero-scroll startup display.
+* **Polished Modern Windows UI**: Desktop-first design featuring native Dark and Light theme switching, balanced settings layout, ergonomic vector action buttons, and instantaneous settings dialog opening (~140ms).
 * **Queue & Resiliency Management**: Full control to pause, resume, or cancel active downloads, backed by automatic 3x retries on transient network failures.
+
 ---
 
 ## 📥 Download & Installation
@@ -63,7 +66,7 @@
 Visit the [GitHub Releases](https://github.com/jjsiew2014-art/ChannelHarvest/releases) page to download the latest release for **Windows 10 / 11 (64-bit)**:
 
 ### 1. Windows Installer (Recommended)
-* **File**: `ChannelHarvest-Setup-v1.1.0.exe`
+* **File**: `ChannelHarvest-Setup-v1.2.0.exe`
 * **Features**:
   * Clean standard Windows installer (built with Inno Setup).
   * Installs into `Program Files\Channel Harvest` (or user profile for non-admin).
@@ -71,7 +74,7 @@ Visit the [GitHub Releases](https://github.com/jjsiew2014-art/ChannelHarvest/rel
   * Registers in Windows *Settings > Installed apps* with a clean uninstaller.
 
 ### 2. Standalone Portable ZIP
-* **File**: `ChannelHarvest-Portable-v1.1.0.zip`
+* **File**: `ChannelHarvest-Portable-v1.2.0.zip`
 * **Features**:
   * Zero installation required.
   * Extract anywhere and double-click `ChannelHarvest.exe`.
@@ -89,9 +92,8 @@ Because Channel Harvest is an open-source tool and not signed with an expensive 
 
 You can verify the SHA-256 integrity hash of your downloaded file against `SHA256SUMS.txt` published on the GitHub Releases page:
 ```powershell
-Get-FileHash ChannelHarvest-Setup-v1.1.0.exe -Algorithm SHA256
+Get-FileHash ChannelHarvest-Setup-v1.2.0.exe -Algorithm SHA256
 ```
-
 
 ---
 
@@ -186,14 +188,13 @@ python build.py
 *(Or double-click `build_release.bat`)*
 
 The script will automatically:
-1. Verify runtime binaries (`ffmpeg.exe`, `ffprobe.exe`, `yt-dlp.exe`).
+1. Verify runtime binaries (`deno.exe`, `ffmpeg.exe`, `ffprobe.exe`, `yt-dlp.exe`).
 2. Generate multi-resolution icons and PE metadata.
 3. Clean and freeze the application using PyInstaller.
 4. Deploy the `runtime/` folder into `dist/ChannelHarvest/`.
-5. Package `release/ChannelHarvest-Portable-v1.1.0.zip`.
-6. Compile `release/ChannelHarvest-Setup-v1.1.0.exe` using Inno Setup.
+5. Package `release/ChannelHarvest-Portable-v1.2.0.zip`.
+6. Compile `release/ChannelHarvest-Setup-v1.2.0.exe` using Inno Setup.
 7. Generate cryptographic SHA-256 hashes in `release/SHA256SUMS.txt`.
-
 
 ---
 

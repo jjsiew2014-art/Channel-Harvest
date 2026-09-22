@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block_cipher = None
 
@@ -10,6 +11,8 @@ datas = [
     ('gui/arrow_down_dark.png', 'gui'),
     ('gui/checkmark.png', 'gui'),
 ]
+datas += collect_data_files('yt_dlp')
+datas += collect_data_files('yt_dlp_ejs')
 
 hidden_imports = [
     'PySide6.QtCore',
@@ -20,23 +23,39 @@ hidden_imports = [
     'yt_dlp.version',
     'yt_dlp.extractor',
     'yt_dlp.postprocessor',
+    'yt_dlp_ejs',
+    'yt_dlp_ejs._version',
+    'yt_dlp_ejs.yt',
+    'yt_dlp_ejs.yt.solver',
     'core',
+    'core.diagnostics',
+    'core.error_classifier',
+    'core.i18n',
     'core.models',
     'core.paths',
     'core.settings',
     'core.version',
     'downloader',
+    'downloader.auth_checker',
+    'downloader.deno_checker',
     'downloader.download_manager',
     'downloader.ffmpeg_checker',
     'downloader.format_selector',
+    'downloader.runtime_manager',
+    'downloader.subtitle_manager',
+    'downloader.thumbnail_manager',
+    'downloader.info_manager',
     'downloader.updater',
     'downloader.ytdlp_engine',
     'gui',
+    'gui.auth_result_dialog',
+    'gui.error_details_dialog',
     'gui.main_window',
     'gui.settings_dialog',
     'gui.styles',
     'gui.summary_dialog',
     'gui.video_table',
+    'gui.taskbar_progress',
 ]
 
 a = Analysis(

@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 from core.paths import get_logo_file
+from core.i18n import I18nManager, tr
 
 
 class SummaryDialog(QDialog):
@@ -46,7 +47,7 @@ class SummaryDialog(QDialog):
         self.total = total
         self.download_folder = download_folder
 
-        self.setWindowTitle("Download Queue Complete")
+        self.setWindowTitle(tr("summary_window_title"))
         self.setMinimumWidth(440)
         self.setModal(True)
 
@@ -62,64 +63,64 @@ class SummaryDialog(QDialog):
         layout.setContentsMargins(24, 20, 24, 20)
         layout.setSpacing(16)
 
-        # Header Title
-        title_label = QLabel("🎉 Downloads Finished")
+        # Header Title (Main Heading Format & Size)
+        title_label = QLabel(tr("summary_header_title"))
+        title_label.setObjectName("summaryTitleLabel")
         title_font = QFont()
-        title_font.setPointSize(14)
+        title_font.setPointSize(15)
         title_font.setBold(True)
         title_label.setFont(title_font)
-        title_label.setStyleSheet("color: #0f172a;")
         layout.addWidget(title_label)
 
         # Statistics Card
-        stats_group = QGroupBox("Batch Results")
+        stats_group = QGroupBox(tr("summary_batch_results"))
         grid = QGridLayout(stats_group)
         grid.setContentsMargins(16, 16, 16, 14)
         grid.setSpacing(10)
 
         # Total
-        grid.addWidget(QLabel("Total Videos in Queue:"), 0, 0)
+        grid.addWidget(QLabel(tr("summary_total")), 0, 0)
         total_val = QLabel(str(self.total))
-        total_val.setStyleSheet("font-weight: bold; color: #1e293b;")
+        total_val.setObjectName("summaryTotalVal")
         grid.addWidget(total_val, 0, 1)
 
         # Completed
-        grid.addWidget(QLabel("Successfully Downloaded:"), 1, 0)
+        grid.addWidget(QLabel(tr("summary_completed")), 1, 0)
         comp_val = QLabel(str(self.completed))
-        comp_val.setStyleSheet("font-weight: bold; color: #16a34a;")
+        comp_val.setObjectName("summaryCompletedVal")
         grid.addWidget(comp_val, 1, 1)
 
         # Skipped
-        grid.addWidget(QLabel("Skipped (Already Exists):"), 2, 0)
+        grid.addWidget(QLabel(tr("summary_skipped")), 2, 0)
         skip_val = QLabel(str(self.skipped))
-        skip_val.setStyleSheet("font-weight: bold; color: #64748b;")
+        skip_val.setObjectName("summarySkippedVal")
         grid.addWidget(skip_val, 2, 1)
 
         # Failed
-        grid.addWidget(QLabel("Failed:"), 3, 0)
+        grid.addWidget(QLabel(tr("summary_failed")), 3, 0)
         fail_val = QLabel(str(self.failed))
-        fail_val.setStyleSheet("font-weight: bold; color: #dc2626;" if self.failed > 0 else "color: #64748b;")
+        fail_val.setObjectName("summaryFailedVal" if self.failed > 0 else "summarySkippedVal")
         grid.addWidget(fail_val, 3, 1)
 
         layout.addWidget(stats_group)
 
         # Destination Folder Info
-        folder_info = QLabel(f"<b>Destination:</b><br>{self.download_folder}")
+        folder_info = QLabel(f"<b>{tr('summary_destination')}</b><br>{self.download_folder}")
         folder_info.setWordWrap(True)
-        folder_info.setStyleSheet("color: #475569; font-size: 12px; padding: 4px;")
+        folder_info.setObjectName("summaryFolderInfo")
         layout.addWidget(folder_info)
 
         # Action Buttons
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)
 
-        self.open_folder_btn = QPushButton("📁 Open Download Folder")
+        self.open_folder_btn = QPushButton(tr("summary_open_folder"))
         self.open_folder_btn.setObjectName("primaryButton")
         self.open_folder_btn.setMinimumHeight(34)
         self.open_folder_btn.clicked.connect(self._on_open_folder)
         btn_layout.addWidget(self.open_folder_btn)
 
-        self.close_btn = QPushButton("Close")
+        self.close_btn = QPushButton(tr("close"))
         self.close_btn.setObjectName("secondaryButton")
         self.close_btn.setMinimumHeight(34)
         self.close_btn.clicked.connect(self.accept)
@@ -133,8 +134,8 @@ class SummaryDialog(QDialog):
         if not folder_path.exists():
             QMessageBox.warning(
                 self,
-                "Folder Not Found",
-                f"The directory does not exist yet:\n{self.download_folder}",
+                tr("dialog_folder_not_found_title"),
+                tr("dialog_folder_not_found_msg", folder=self.download_folder),
             )
             return
 
@@ -143,6 +144,6 @@ class SummaryDialog(QDialog):
         except Exception as e:
             QMessageBox.warning(
                 self,
-                "Error",
-                f"Could not open directory:\n{str(e)}",
+                tr("error"),
+                tr("could_not_open_dir_fmt", error=str(e)),
             )

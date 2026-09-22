@@ -11,9 +11,11 @@ and independently from the application code or standalone .exe distribution.
 """
 
 import os
+import re
 import shutil
 import sys
 from pathlib import Path
+from typing import Optional, Set
 
 
 def get_app_data_dir() -> Path:
@@ -159,6 +161,37 @@ def get_bundled_executable(name: str) -> Optional[Path]:
     return None
 
 
+def get_deno_executable() -> Optional[Path]:
+    """
+    Returns path to bundled or user-updated deno.exe.
+    Resolves seamlessly in development, PyInstaller onedir, and portable distributions.
+    """
+    deno_path = get_bundled_executable("deno.exe")
+    if deno_path and deno_path.is_file():
+        return deno_path
+    deno_fallback = get_bundled_executable("deno")
+    if deno_fallback and deno_fallback.is_file():
+        return deno_fallback
+    # Check PATH as fallback
+    which_deno = shutil.which("deno.exe") or shutil.which("deno")
+    if which_deno:
+        return Path(which_deno)
+    return None
+
+
+def get_ytdlp_binary_path() -> Optional[Path]:
+    """
+    Returns path to bundled or user-updated yt-dlp.exe.
+    """
+    ytdlp_path = get_bundled_executable("yt-dlp.exe")
+    if ytdlp_path and ytdlp_path.is_file():
+        return ytdlp_path
+    which_ytdlp = shutil.which("yt-dlp.exe") or shutil.which("yt-dlp")
+    if which_ytdlp:
+        return Path(which_ytdlp)
+    return None
+
+
 def setup_runtime_environment() -> None:
     """
     Initializes runtime environment:
@@ -180,4 +213,87 @@ def setup_runtime_environment() -> None:
         path_str = os.environ.get("PATH", "")
         if str(runtime_dir) not in path_str:
             os.environ["PATH"] = f"{str(runtime_dir)}{os.pathsep}{path_str}"
+
+
+def sanitize_filename(name: str) -> str:
+    """
+    Removes characters invalid in Windows directory and file names
+    (\\ / : * ? " < > |), trims whitespace, and strips trailing periods or spaces,
+    while preserving Chinese, Japanese, Korean, Malay, English, and emojis.
+    """
+    clean = re.sub(r'[\\/*?:"<>|]', "_", name).strip()
+    clean = clean.rstrip(". ")
+    return clean or "Untitled"
+
+
+def resolve_video_output_dir(
+    base_download_dir: Path,
+    channel_title: Optional[str],
+    create_channel_folder: bool,
+    video_title: str,
+    video_id: str,
+    create_individual_video_folders: bool,
+    duplicate_titles_in_queue: Optional[Set[str]] = None,
+) -> Path:
+    """
+    Centralized resolver for video output directory.
+    Hierarchy:
+        download_root
+            ↓ (if create_channel_folder and channel_title)
+        channel_subfolder
+            ↓ (if create_individual_video_folders)
+        individual_video_folder
+
+    Collision Handling:
+        If multiple videos in the queue share the same sanitized title,
+        or if a directory already exists on disk containing files belonging to a
+        different video ID, appends ' [VIDEO_ID]' to ensure deterministic isolation.
+    """
+    # 1. Base / Channel level
+    if create_channel_folder and channel_title:
+        clean_channel = sanitize_filename(channel_title)
+        parent_dir = base_download_dir / clean_channel
+    else:
+        parent_dir = base_download_dir
+
+    if not create_individual_video_folders:
+        return parent_dir
+
+    # 2. Individual video folder level
+    clean_title = sanitize_filename(video_title)
+    id_tagged_dir = parent_dir / f"{clean_title} [{video_id}]"
+
+    # If this video already has an ID-tagged folder from a previous collision run, reuse it
+    if id_tagged_dir.is_dir():
+        return id_tagged_dir
+
+    # Check duplicate in queue
+    is_dup_in_queue = bool(
+        duplicate_titles_in_queue
+        and (video_title in duplicate_titles_in_queue or clean_title in duplicate_titles_in_queue)
+    )
+
+    candidate_dir = parent_dir / clean_title
+
+    # Check collision on disk: if candidate_dir exists and contains files for another video ID
+    collision_on_disk = False
+    if candidate_dir.is_dir():
+        try:
+            for item in candidate_dir.iterdir():
+                if item.is_file():
+                    # Look for [video_id] pattern in existing filenames
+                    m = re.search(r'\[([a-zA-Z0-9_-]{6,16})\]', item.name)
+                    if m and m.group(1) != video_id:
+                        collision_on_disk = True
+                        break
+        except Exception:
+            pass
+
+    if is_dup_in_queue or collision_on_disk:
+        folder_name = f"{clean_title} [{video_id}]"
+    else:
+        folder_name = clean_title
+
+    return parent_dir / folder_name
+
 
