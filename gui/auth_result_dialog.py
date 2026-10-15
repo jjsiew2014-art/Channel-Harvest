@@ -47,7 +47,11 @@ class AuthResultDialog(QDialog):
         super().__init__(parent)
         self.result = result
 
-        title = tr("auth_dialog_title") if tr("auth_dialog_title") != "auth_dialog_title" else "YouTube Authentication Test"
+        plat = getattr(self.result, "platform", "youtube")
+        if plat == "douyin":
+            title = tr("auth_dialog_douyin_title") if tr("auth_dialog_douyin_title") != "auth_dialog_douyin_title" else "Douyin Authentication Diagnostics"
+        else:
+            title = tr("auth_dialog_title") if tr("auth_dialog_title") != "auth_dialog_title" else "YouTube Authentication Diagnostics"
         self.setWindowTitle(title)
         self.setMinimumWidth(520)
         self.setModal(True)
@@ -86,7 +90,7 @@ class AuthResultDialog(QDialog):
 
         header_label = QLabel(header_text)
         header_label.setObjectName("authResultHeader")
-        header_font = QFont()
+        header_font = header_label.font()
         header_font.setPointSize(14)
         header_font.setBold(True)
         header_label.setFont(header_font)
@@ -155,8 +159,10 @@ class AuthResultDialog(QDialog):
             tech_text = QTextEdit()
             tech_text.setReadOnly(True)
             tech_text.setMaximumHeight(80)
-            tech_text.setFontFamily("Consolas, Courier New, monospace")
-            tech_text.setFontPointSize(9.5)
+            tech_font = tech_text.font()
+            tech_font.setFamily("Consolas, Courier New, monospace")
+            tech_font.setPointSize(10)
+            tech_text.setFont(tech_font)
             err_content = self.result.technical_error or self.result.raw_error
             tech_text.setPlainText(err_content.strip())
             tech_text.setStyleSheet(
@@ -207,9 +213,11 @@ class AuthResultDialog(QDialog):
             norm_path = str(Path(file_path).resolve())
             from core.settings import SettingsManager
             sm = SettingsManager()
-            sm.set("auth_method", "custom_file")
-            sm.set("browser_cookies", "custom_file")
-            sm.set("custom_cookie_file", norm_path)
+            plat = getattr(self.result, "platform", "youtube")
+            pfx = f"{plat}_" if plat != "youtube" else ""
+            sm.set(f"{pfx}auth_method", "custom_file")
+            sm.set(f"{pfx}browser_cookies", "custom_file")
+            sm.set(f"{pfx}custom_cookie_file", norm_path)
             if self.parent() and hasattr(self.parent(), "_sync_auth_ui_from_settings"):
                 self.parent()._sync_auth_ui_from_settings()
             self.accept()

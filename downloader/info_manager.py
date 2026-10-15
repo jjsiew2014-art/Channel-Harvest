@@ -20,6 +20,7 @@ from typing import Dict, Tuple, Optional, Callable, Any, List
 import yt_dlp
 
 from core.models import VideoItem, DownloadSettings
+from core.paths import resolve_media_filename, sanitize_filename, get_temp_dir
 from downloader.ytdlp_engine import YtDlpEngine
 
 
@@ -50,10 +51,10 @@ class InfoManager:
             return "00:00:00"
 
     @classmethod
-    def get_description_path(cls, video: VideoItem, target_dir: Path) -> Path:
+    def get_description_path(cls, video: VideoItem, target_dir: Path, include_video_id: bool = False) -> Path:
         """Returns the expected output path for the description file."""
-        clean_title = cls.sanitize_title(video.title)
-        return target_dir / f"{clean_title} [{video.video_id}].description"
+        filename = resolve_media_filename(video.title, video.video_id, "description", include_video_id=include_video_id)
+        return target_dir / filename
 
     @classmethod
     def format_duration(cls, seconds: Optional[float]) -> str:
@@ -265,16 +266,16 @@ class InfoManager:
         return "\n".join(sections).rstrip() + "\n"
 
     @classmethod
-    def get_metadata_path(cls, video: VideoItem, target_dir: Path) -> Path:
+    def get_metadata_path(cls, video: VideoItem, target_dir: Path, include_video_id: bool = False) -> Path:
         """Returns the expected output path for the .metadata.txt file."""
-        clean_title = cls.sanitize_title(video.title)
-        return target_dir / f"{clean_title} [{video.video_id}].metadata.txt"
+        filename = resolve_media_filename(video.title, video.video_id, "metadata.txt", include_video_id=include_video_id)
+        return target_dir / filename
 
     @classmethod
-    def get_chapters_path(cls, video: VideoItem, target_dir: Path) -> Path:
+    def get_chapters_path(cls, video: VideoItem, target_dir: Path, include_video_id: bool = False) -> Path:
         """Returns the expected output path for the .chapters.txt file."""
-        clean_title = cls.sanitize_title(video.title)
-        return target_dir / f"{clean_title} [{video.video_id}].chapters.txt"
+        filename = resolve_media_filename(video.title, video.video_id, "chapters.txt", include_video_id=include_video_id)
+        return target_dir / filename
 
     @classmethod
     def is_info_complete(
@@ -289,17 +290,26 @@ class InfoManager:
         Returns:
             Tuple of (all_complete: bool, status_by_key: Dict[str, bool])
         """
-        desc_path = cls.get_description_path(video, target_dir)
-        meta_path = cls.get_metadata_path(video, target_dir)
-        chap_path = cls.get_chapters_path(video, target_dir)
+        inc_id = getattr(settings, "include_video_id_in_filename", False)
+        desc_path = cls.get_description_path(video, target_dir, include_video_id=inc_id)
+        meta_path = cls.get_metadata_path(video, target_dir, include_video_id=inc_id)
+        chap_path = cls.get_chapters_path(video, target_dir, include_video_id=inc_id)
+
+        def file_exists(primary_path: Path, alt_func) -> bool:
+            if primary_path.is_file() and primary_path.stat().st_size > 0:
+                return True
+            alt_path = alt_func(video, target_dir, include_video_id=not inc_id)
+            if alt_path.is_file() and alt_path.stat().st_size > 0:
+                return True
+            return False
 
         needed: Dict[str, bool] = {}
         if settings.save_description:
-            needed["description"] = desc_path.is_file() and desc_path.stat().st_size > 0
+            needed["description"] = file_exists(desc_path, cls.get_description_path)
         if settings.save_metadata:
-            needed["metadata"] = meta_path.is_file() and meta_path.stat().st_size > 0
+            needed["metadata"] = file_exists(meta_path, cls.get_metadata_path)
         if settings.save_chapters:
-            needed["chapters"] = chap_path.is_file() and chap_path.stat().st_size > 0
+            needed["chapters"] = file_exists(chap_path, cls.get_chapters_path)
 
         all_present = len(needed) > 0 and all(needed.values())
         return all_present, needed
@@ -340,13 +350,19 @@ class InfoManager:
                 "error": "Cancelled by user",
             }
 
-        clean_title = cls.sanitize_title(video.title)
+        inc_id = getattr(settings, "include_video_id_in_filename", False)
+        clean_title = sanitize_filename(video.title)
         target_dir.mkdir(parents=True, exist_ok=True)
-        video_url = video.url if video.url else f"https://www.youtube.com/watch?v={video.video_id}"
+        if not video.url:
+            from core.platform import PlatformRegistry
+            adapter = PlatformRegistry.get_adapter(getattr(video, "platform", "youtube"))
+            video_url = adapter.build_video_url(video.video_id) if adapter else f"https://www.youtube.com/watch?v={video.video_id}"
+        else:
+            video_url = video.url
 
-        desc_path = cls.get_description_path(video, target_dir)
-        meta_path = cls.get_metadata_path(video, target_dir)
-        chap_path = cls.get_chapters_path(video, target_dir)
+        desc_path = cls.get_description_path(video, target_dir, include_video_id=inc_id)
+        meta_path = cls.get_metadata_path(video, target_dir, include_video_id=inc_id)
+        chap_path = cls.get_chapters_path(video, target_dir, include_video_id=inc_id)
 
         # 3. Independent disk skip check
         if settings.skip_existing:
@@ -362,19 +378,27 @@ class InfoManager:
                 }
 
         # 4. Prepare yt-dlp options for single-pass extraction
-        outtmpl_pattern = str(target_dir / f"{clean_title} [{video.video_id}].%(ext)s")
+        stem = resolve_media_filename(video.title, video.video_id, include_video_id=inc_id)
+        outtmpl_pattern = str(target_dir / f"{stem}.%(ext)s")
 
+        platform = getattr(video, "platform", "youtube")
         ydl_opts: Dict[str, Any] = YtDlpEngine.build_base_ydl_opts(
             log_callback=log_callback,
             browser_cookies=settings.browser_cookies,
             quiet=True,
             no_warnings=True,
+            platform=platform,
+            settings=settings,
         )
         ydl_opts.update({
             "skip_download": True,
             "windowsfilenames": True,
             "continuedl": True,
             "outtmpl": outtmpl_pattern,
+            "paths": {
+                "home": str(target_dir),
+                "temp": str(get_temp_dir()),
+            },
         })
 
         need_meta_write = settings.save_metadata and (not settings.skip_existing or not (meta_path.is_file() and meta_path.stat().st_size > 0))
@@ -440,19 +464,29 @@ class InfoManager:
                 if log_callback:
                     log_callback(f"[Description] Saved: {desc_path.name}")
             else:
-                raw_desc = (info or {}).get("description")
-                if raw_desc is not None:
-                    try:
-                        desc_path.write_text(raw_desc, encoding="utf-8")
-                        saved_files.append(desc_path)
+                found_desc = False
+                for cand in target_dir.glob("*.description"):
+                    if cand.is_file() and cand.stat().st_size > 0:
+                        if cand.name.startswith(f"{stem}.") or (video.video_id and video.video_id in cand.name):
+                            saved_files.append(cand)
+                            found_desc = True
+                            if log_callback:
+                                log_callback(f"[Description] Saved: {cand.name}")
+                            break
+                if not found_desc:
+                    raw_desc = (info or {}).get("description")
+                    if raw_desc is not None:
+                        try:
+                            desc_path.write_text(raw_desc, encoding="utf-8")
+                            saved_files.append(desc_path)
+                            if log_callback:
+                                log_callback(f"[Description] Saved: {desc_path.name}")
+                        except Exception as e:
+                            if log_callback:
+                                log_callback(f"[Description] Failed: {video.title}\nReason: {e}")
+                    else:
                         if log_callback:
-                            log_callback(f"[Description] Saved: {desc_path.name}")
-                    except Exception as e:
-                        if log_callback:
-                            log_callback(f"[Description] Failed: {video.title}\nReason: {e}")
-                else:
-                    if log_callback:
-                        log_callback(f"[Description] Failed: {video.title}\nReason: Description unavailable")
+                            log_callback(f"[Description] Failed: {video.title}\nReason: Description unavailable")
 
         # 8. Extract and handle Chapters (.chapters.txt)
         if settings.save_chapters:

@@ -14,13 +14,21 @@ import re
 import time
 import threading
 from pathlib import Path
+from dataclasses import replace
 from typing import List, Optional, Dict, Any
 
 from PySide6.QtCore import QThread, Signal, QObject
 
 from collections import Counter
 from core.models import VideoItem, DownloadSettings, VideoStatus, DownloadMode, SubtitleSource
-from core.paths import get_archive_file, resolve_video_output_dir, sanitize_filename
+from core.paths import (
+    get_archive_file,
+    resolve_video_output_dir,
+    sanitize_filename,
+    should_include_video_id,
+    ensure_safe_environment,
+    cleanup_temp_dir,
+)
 from downloader.ytdlp_engine import (
     YtDlpEngine,
     DownloaderError,
@@ -165,11 +173,11 @@ class DownloadManager(QThread):
         return self._is_paused
 
     @staticmethod
-    def classify_error(err_msg: str) -> str:
+    def classify_error(err_msg: str, platform: Optional[str] = None) -> str:
         """
         Classifies downloader error into standard category using ErrorClassifier.
         """
-        return ErrorClassifier.classify(err_msg).category
+        return ErrorClassifier.classify(err_msg, platform=platform).category
 
     def _cancelable_sleep(self, seconds: float) -> bool:
         """
@@ -193,12 +201,15 @@ class DownloadManager(QThread):
         self.queue_started.emit(total_videos)
         self.log_message.emit("=" * 65)
         self.log_message.emit(f"[INFO] Download Queue Started: {total_videos} video(s)")
+        cwd, safe_temp = ensure_safe_environment()
+        self.log_message.emit(f"[INFO] Working Directory: {cwd}")
+        self.log_message.emit(f"[INFO] Temporary Directory: {safe_temp}")
         mode_val = self.settings.download_mode or DownloadMode.VIDEO_AND_AUDIO
         self.log_message.emit(f"[CONFIG] Download Mode : {mode_val}")
         if mode_val in (DownloadMode.VIDEO_ONLY, DownloadMode.VIDEO_AND_AUDIO):
             self.log_message.emit(f"[CONFIG] Video Format  : {self.settings.format} ({self.settings.quality}, {self.settings.bitrate})")
         # Log subtitle configuration if active
-        if self.settings.download_subtitles or mode_val == DownloadMode.SUBTITLE_ONLY:
+        if self.settings.download_subtitles:
             self.log_message.emit(f"[CONFIG] Subtitle      : {self.settings.subtitle_language} ({self.settings.subtitle_source}, {self.settings.subtitle_format})")
         # Log thumbnail configuration if active
         if self.settings.download_thumbnail:
@@ -212,6 +223,7 @@ class DownloadManager(QThread):
             self.log_message.emit("[CONFIG] Chapters      : Yes (.chapters.txt)")
         self.log_message.emit(f"[CONFIG] Channel Folder : {'Yes' if self.settings.create_channel_folder else 'No'}")
         self.log_message.emit(f"[CONFIG] Video Folders  : {'Yes' if self.settings.create_individual_video_folders else 'No'}")
+        self.log_message.emit(f"[CONFIG] Video ID in File: {'Yes' if self.settings.include_video_id_in_filename else 'No'}")
         self.log_message.emit(f"[CONFIG] Skip Existing : {'Yes' if self.settings.skip_existing else 'No'}")
 
         # 1. Resolve Target Directory & Create Channel Subfolder if enabled
@@ -241,8 +253,8 @@ class DownloadManager(QThread):
             self.log_message.emit("[WARNING] FFmpeg not found. Media stream merging and subtitle conversion may be limited.")
 
         # 3. Resolve Download Archive path
-        # In Subtitle Only mode, we do NOT use or write to the video download archive
-        is_sub_only = (mode_val == DownloadMode.SUBTITLE_ONLY)
+        # In Assets Only mode, we do NOT use or write to the video download archive
+        is_sub_only = (mode_val in (DownloadMode.ASSETS_ONLY, "Subtitle Only"))
         archive_file = get_archive_file() if (self.settings.skip_existing and not is_sub_only) else None
         if archive_file:
             self.log_message.emit(f"[INFO] Archive File    : {archive_file}")
@@ -257,7 +269,7 @@ class DownloadManager(QThread):
         # Mark all selected items as 'Waiting' initially
         for vid in self.videos:
             self.video_status_changed.emit(vid.video_id, VideoStatus.WAITING, "")
-            if self.settings.download_subtitles or is_sub_only:
+            if self.settings.download_subtitles:
                 self.video_subtitle_status.emit(vid.video_id, "Waiting")
 
         # Identify duplicate titles in queue for deterministic folder collision isolation
@@ -294,6 +306,31 @@ class DownloadManager(QThread):
                 create_individual_video_folders=self.settings.create_individual_video_folders,
                 duplicate_titles_in_queue=duplicate_titles,
             )
+
+            # Resolve effective video ID filename setting with collision protection
+            eff_include_id = should_include_video_id(
+                video_title=video.title,
+                video_id=video.video_id,
+                include_video_id_setting=self.settings.include_video_id_in_filename,
+                create_individual_video_folders=self.settings.create_individual_video_folders,
+                duplicate_titles_in_queue=duplicate_titles,
+                target_dir=video_target_dir,
+            )
+            video_settings = replace(self.settings, include_video_id_in_filename=eff_include_id)
+            from core.platform import PlatformRegistry
+            video_platform = getattr(video, "platform", "youtube")
+            if not PlatformRegistry.is_available(video_platform):
+                from core.error_classifier import ErrorClassifier
+                err = ErrorClassifier.for_unavailable_platform(video_platform, video_id=video.video_id, video_title=video.title)
+                self.log_message.emit(f"[BLOCKED] {err.title}: {err.user_message}")
+                failed_count += 1
+                self.video_status_changed.emit(video.video_id, VideoStatus.FAILED, err.user_message)
+                continue
+
+            adapter = PlatformRegistry.get_adapter(video_platform)
+            supports_cookies = (adapter.capabilities.supports_browser_cookies or adapter.capabilities.supports_cookie_file) if adapter else (video_platform.lower() == "youtube")
+            if not supports_cookies:
+                video_settings = replace(video_settings, browser_cookies="none")
 
             try:
                 video_target_dir.mkdir(parents=True, exist_ok=True)
@@ -335,79 +372,120 @@ class DownloadManager(QThread):
                     self.log_message.emit(f"[PROCESSING] FFmpeg processing ({step_val or 'media'}): {video.title}")
 
             # -------------------------------------------------------------
-            # Branch A: SUBTITLE ONLY MODE
+            # Branch A: ASSETS ONLY MODE
             # -------------------------------------------------------------
             if is_sub_only:
-                self.video_status_changed.emit(video.video_id, "Downloading Subtitle", "")
-                self.video_subtitle_status.emit(video.video_id, "Downloading...")
-                self.video_progress.emit(video.video_id, 50.0, "-- KB", "-- KB", "Fetching Subtitle", "--:--")
+                self.video_status_changed.emit(video.video_id, "Downloading Assets", "")
+                self.video_progress.emit(video.video_id, 30.0, "-- KB", "-- KB", "Fetching Assets", "--:--")
 
-                sub_res = SubtitleManager.download_subtitles(
-                    video=video,
-                    settings=self.settings,
-                    target_dir=video_target_dir,
-                    ffmpeg_location=ffmpeg_dir,
-                    log_callback=self.log_message.emit,
-                    cancel_check=self.is_cancelled,
-                )
+                has_sub = bool(self.settings.download_subtitles)
+                has_thumb = bool(self.settings.download_thumbnail)
+                has_info = bool(self.settings.save_description or self.settings.save_metadata or self.settings.save_chapters)
+
+                sub_res = None
+                thumb_res = None
+                info_res = None
+
+                # 1. Subtitles (only if explicitly enabled)
+                if has_sub and not self._is_cancelled:
+                    self.video_subtitle_status.emit(video.video_id, "Downloading...")
+                    sub_res = SubtitleManager.download_subtitles(
+                        video=video,
+                        settings=video_settings,
+                        target_dir=video_target_dir,
+                        ffmpeg_location=ffmpeg_dir,
+                        log_callback=self.log_message.emit,
+                        cancel_check=self.is_cancelled,
+                    )
+                    self.video_subtitle_status.emit(video.video_id, sub_res.get("status_text", "No Subs"))
 
                 if self._is_cancelled:
                     self._mark_remaining_cancelled(self.videos[index - 1:])
                     break
 
-                self.video_subtitle_status.emit(video.video_id, sub_res.get("status_text", "No Subs"))
-
-                # Download thumbnail in Subtitle Only mode if enabled
-                if self.settings.download_thumbnail and not self._is_cancelled:
-                    ThumbnailManager.download_thumbnail(
+                # 2. Thumbnail
+                if has_thumb and not self._is_cancelled:
+                    thumb_res = ThumbnailManager.download_thumbnail(
                         video=video,
-                        settings=self.settings,
+                        settings=video_settings,
                         target_dir=video_target_dir,
                         ffmpeg_location=ffmpeg_dir,
                         log_callback=self.log_message.emit,
                         cancel_check=self.is_cancelled,
                     )
 
-                # Save metadata / description / chapters in Subtitle Only mode if enabled
-                if (self.settings.save_description or self.settings.save_metadata or self.settings.save_chapters) and not self._is_cancelled:
-                    InfoManager.save_video_info(
+                if self._is_cancelled:
+                    self._mark_remaining_cancelled(self.videos[index - 1:])
+                    break
+
+                # 3. Description / Metadata / Chapters
+                if has_info and not self._is_cancelled:
+                    info_res = InfoManager.save_video_info(
                         video=video,
-                        settings=self.settings,
+                        settings=video_settings,
                         target_dir=video_target_dir,
                         log_callback=self.log_message.emit,
                         cancel_check=self.is_cancelled,
                     )
 
-                if sub_res.get("success"):
-                    if sub_res.get("skipped"):
-                        skipped_count += 1
-                        self.video_status_changed.emit(video.video_id, VideoStatus.SKIPPED, "Subtitle already exists on disk")
-                        self.log_message.emit(f"[SKIPPED] Subtitle already exists: {video.title}")
+                # Collect results
+                results = []
+                if has_sub and sub_res:
+                    results.append(("subtitle", sub_res))
+                if has_thumb and thumb_res:
+                    results.append(("thumbnail", thumb_res))
+                if has_info and info_res:
+                    results.append(("metadata", info_res))
+
+                hard_failures = []
+                any_success = False
+                all_skipped = bool(results)
+
+                for rtype, rdict in results:
+                    succ = rdict.get("success", False)
+                    skip = rdict.get("skipped", False)
+                    err = rdict.get("error", "")
+
+                    if succ:
+                        if not skip:
+                            any_success = True
+                            all_skipped = False
                     else:
-                        completed_count += 1
-                        self.video_status_changed.emit(video.video_id, VideoStatus.COMPLETED, "")
-                        self.video_progress.emit(video.video_id, 100.0, "-- KB", "-- KB", "Finished", "00:00")
-                        self.log_message.emit(f"[COMPLETED] Subtitle downloaded: {video.title}")
+                        # For subtitles, missing subs is non-fatal notice
+                        if rtype == "subtitle" and ("No subtitles" in err or "not available" in err or "No Sub" in rdict.get("status_text", "") or rdict.get("status_text", "").startswith("—")):
+                            pass
+                        else:
+                            all_skipped = False
+                            hard_failures.append((rtype, err))
+
+                if hard_failures:
+                    failed_count += 1
+                    first_fail_type, first_err = hard_failures[0]
+                    sub_dl_err = ErrorClassifier.classify(
+                        raw_error=first_err,
+                        component="yt-dlp",
+                        stage=first_fail_type,
+                        video_id=video.video_id,
+                        video_title=video.title,
+                        platform=getattr(video, "platform", "youtube"),
+                    )
+                    video.error_details = sub_dl_err
+                    ErrorTracker.record_error(sub_dl_err)
+                    self.video_status_changed.emit(video.video_id, sub_dl_err.concise_status, sub_dl_err.user_message)
+                    self.log_message.emit(f"[FAILED] Asset download failed for {video.title}: {sub_dl_err.user_message}")
+                elif any_success:
+                    completed_count += 1
+                    self.video_status_changed.emit(video.video_id, VideoStatus.COMPLETED, "")
+                    self.video_progress.emit(video.video_id, 100.0, "-- KB", "-- KB", "Finished", "00:00")
+                    self.log_message.emit(f"[COMPLETED] Assets downloaded: {video.title}")
+                elif all_skipped:
+                    skipped_count += 1
+                    self.video_status_changed.emit(video.video_id, VideoStatus.SKIPPED, "Assets already exist on disk")
+                    self.log_message.emit(f"[SKIPPED] Assets already exist: {video.title}")
                 else:
-                    err_msg = sub_res.get("error", "No subtitles available")
-                    # Non-fatal if no subtitles were available for this video
-                    if "No subtitles" in err_msg or "not available" in err_msg or "No Sub" in sub_res.get("status_text", "") or sub_res.get("status_text", "").startswith("—"):
-                        skipped_count += 1
-                        self.video_status_changed.emit(video.video_id, "No Subtitle", err_msg)
-                        self.log_message.emit(f"[SUBTITLE NOTICE] {video.title}: {err_msg}")
-                    else:
-                        failed_count += 1
-                        sub_dl_err = ErrorClassifier.classify(
-                            raw_error=err_msg,
-                            component="yt-dlp",
-                            stage="subtitle",
-                            video_id=video.video_id,
-                            video_title=video.title,
-                        )
-                        video.error_details = sub_dl_err
-                        ErrorTracker.record_error(sub_dl_err)
-                        self.video_status_changed.emit(video.video_id, sub_dl_err.concise_status, sub_dl_err.user_message)
-                        self.log_message.emit(f"[FAILED] Subtitle download failed for {video.title}: {sub_dl_err.user_message}")
+                    skipped_count += 1
+                    self.video_status_changed.emit(video.video_id, "No Subtitle", sub_res.get("error", "") if sub_res else "")
+                    self.log_message.emit(f"[SUBTITLE NOTICE] {video.title}: No subtitles available")
                 continue
 
             # -------------------------------------------------------------
@@ -434,7 +512,7 @@ class DownloadManager(QThread):
                 try:
                     res = self.engine.download_single_video(
                         video=video,
-                        settings=self.settings,
+                        settings=video_settings,
                         target_dir=video_target_dir,
                         ffmpeg_location=ffmpeg_dir,
                         archive_file=archive_file,
@@ -469,6 +547,7 @@ class DownloadManager(QThread):
                         stage=stage,
                         video_id=video.video_id,
                         video_title=video.title,
+                        platform=getattr(video, "platform", "youtube"),
                     )
                     ErrorTracker.record_error(download_error)
                     video.error_details = download_error
@@ -533,7 +612,7 @@ class DownloadManager(QThread):
                 self.video_subtitle_status.emit(video.video_id, "Downloading...")
                 sub_res = SubtitleManager.download_subtitles(
                     video=video,
-                    settings=self.settings,
+                    settings=video_settings,
                     target_dir=video_target_dir,
                     ffmpeg_location=ffmpeg_dir,
                     log_callback=self.log_message.emit,
@@ -545,7 +624,7 @@ class DownloadManager(QThread):
             if self.settings.download_thumbnail and not self._is_cancelled and (success or is_skipped):
                 ThumbnailManager.download_thumbnail(
                     video=video,
-                    settings=self.settings,
+                    settings=video_settings,
                     target_dir=video_target_dir,
                     ffmpeg_location=ffmpeg_dir,
                     log_callback=self.log_message.emit,
@@ -557,7 +636,7 @@ class DownloadManager(QThread):
             if (self.settings.save_description or self.settings.save_metadata or self.settings.save_chapters) and not self._is_cancelled and (success or is_skipped):
                 InfoManager.save_video_info(
                     video=video,
-                    settings=self.settings,
+                    settings=video_settings,
                     target_dir=video_target_dir,
                     log_callback=self.log_message.emit,
                     cancel_check=self.is_cancelled,
@@ -597,6 +676,7 @@ class DownloadManager(QThread):
         self.log_message.emit(f"[SUMMARY] Finished: {completed_count} Completed | {skipped_count} Skipped | {failed_count} Failed")
         self.log_message.emit("=" * 65)
 
+        cleanup_temp_dir()
         self.queue_finished.emit(completed_count, skipped_count, failed_count, total_videos)
 
     def _mark_remaining_cancelled(self, remaining_videos: List[VideoItem]) -> None:

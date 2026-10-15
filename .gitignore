@@ -1,53 +1,93 @@
 # ==============================================================================
 # Channel Harvest - .gitignore
+# Prevents committing build artifacts, release notes, media, and large binaries
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
-# 1. Build & Release Artifacts, Large Binaries (>100MB GitHub limit)
+# 1. Release Notes & Changelogs (Avoid uploading all release notes)
+# ------------------------------------------------------------------------------
+RELEASE_NOTES*
+release_notes*
+*RELEASE_NOTES*
+*release_notes*
+RELEASE-NOTES*
+release-notes*
+*RELEASE-NOTES*
+*release-notes*
+CHANGELOG*
+changelog*
+*CHANGELOG*
+*changelog*
+
+# Ensure project README is always tracked and not accidentally ignored
+!README.md
+!README*.md
+
+# ------------------------------------------------------------------------------
+# 2. Build & Release Artifacts, Packaged Installers & Large Binaries
 # ------------------------------------------------------------------------------
 dist/
 build/
 release/
 bin/
 runtime/
+obj/
+out/
+target/
 
-# Compressed Archives & Package Formats
+# Executables, Libraries & Native Binaries
+*.exe
+*.msi
+*.com
+*.dll
+*.pyd
+*.so
+*.dylib
+*.bin
+*.elf
+*.node
+
+# Compressed Archives & Package Formats (>100MB GitHub limit protection)
 *.zip
 *.7z
 *.rar
 *.tar
 *.tar.gz
 *.tgz
-
-# Executables & Installer Formats
-*.exe
-*.msi
+*.tar.bz2
+*.tbz2
+*.tar.xz
+*.txz
+*.gz
+*.bz2
+*.xz
+*.zst
+*.cab
+*.iso
 *.dmg
 *.pkg
-*.iso
-*.dll
-*.pyd
-*.so
-*.dylib
-*.bin
+*.deb
+*.rpm
+
+# Python Wheels & Packages
+*.whl
+*.egg
+*.egg-info/
 
 # ------------------------------------------------------------------------------
-# 2. PyInstaller Build Artifacts & Intermediate Files
+# 3. PyInstaller Build Artifacts & Intermediate Files
 # ------------------------------------------------------------------------------
 *.manifest
 *.spec.bak
 *.toc
 *.pyz
+warn-*.txt
+xref-*.html
 
 # ------------------------------------------------------------------------------
-# 3. Documentation, README & Release Notes
+# 4. Downloaded Media & Temporary Download Streams (Avoid large media uploads)
 # ------------------------------------------------------------------------------
-RELEASE_NOTES_*.md
-README*
-
-# ------------------------------------------------------------------------------
-# 4. Downloaded Media & Temporary Download Streams
-# ------------------------------------------------------------------------------
+# Video formats
 *.mp4
 *.mkv
 *.webm
@@ -56,7 +96,14 @@ README*
 *.ts
 *.flv
 *.m4v
+*.wmv
+*.mpg
+*.mpeg
+*.vob
+*.3gp
+*.m2ts
 
+# Audio formats
 *.mp3
 *.m4a
 *.flac
@@ -64,11 +111,33 @@ README*
 *.aac
 *.opus
 *.ogg
+*.wma
+*.alac
+*.aiff
 
+# Heavy raw graphics formats
+*.raw
+*.arw
+*.cr2
+*.nef
+*.psd
+*.tiff
+*.tif
+
+# Whitelist tracked repository logo & UI icons
+!Channel Harvest__Logo.png
+!ChannelHarvest.ico
+!gui/*.png
+!gui/*.ico
+!gui/*.svg
+
+# yt-dlp temporary download streams & partial downloads
 *.part
 *.ytdl
 *.temp
 *.tmp
+*.cache
+*.crdownload
 
 # Subtitles, descriptions, metadata & chapters from test/local runs
 *.srt
@@ -79,11 +148,35 @@ README*
 
 # Common download output folders
 downloads/
+download/
 output/
 test_downloads/
+media/
+videos/
+audio/
 
 # ------------------------------------------------------------------------------
-# 5. Python Bytecode, Caches & Virtual Environments
+# 5. Dumps, Traces, Profiling & Large Diagnostics
+# ------------------------------------------------------------------------------
+*.dmp
+*.dump
+*.stackdump
+*.core
+core.*
+*.prof
+*.pstat
+*.trace
+trace*.json
+
+# Databases & local journals
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.db-wal
+
+# ------------------------------------------------------------------------------
+# 6. Python Bytecode, Caches & Virtual Environments
 # ------------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
@@ -98,30 +191,45 @@ env/
 ENV/
 env.bak/
 venv.bak/
+conda/
+.conda/
 
 # Packaging & test coverage caches
-*.egg-info/
 .installed.cfg
-*.egg
 .pytest_cache/
 .coverage
+.coverage.*
 htmlcov/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.cache/
 
 # ------------------------------------------------------------------------------
-# 6. Logs, Diagnostics & Local Scratch / User Data
+# 7. Logs, Diagnostics & Local Scratch / User Data
 # ------------------------------------------------------------------------------
 *.log
+*.log.*
 logs/
 scratch/
 settings.json
 download_archive.txt
+
+# Test screenshots, captures, and debug dumps
 test_*.png
 test_*.jpg
+test_*.jpeg
+test_*.webp
 test_*.json
 test_*.txt
+test_*.mp4
+test_*.mov
+screenshot*.png
+capture*.png
+preview*.png
 
 # ------------------------------------------------------------------------------
-# 7. IDEs, Editors & Operating System Clutter
+# 8. IDEs, Editors & Operating System Clutter
 # ------------------------------------------------------------------------------
 .vscode/
 .idea/
@@ -129,6 +237,7 @@ test_*.txt
 *.swo
 *~
 *.bak
+*.orig
 
 # Windows
 Thumbs.db
@@ -137,6 +246,7 @@ ehthumbs.db
 ehthumbs_vista.db
 Desktop.ini
 $RECYCLE.BIN/
+*.lnk
 
 # macOS
 .DS_Store

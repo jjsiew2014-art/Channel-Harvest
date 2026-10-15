@@ -13,12 +13,15 @@ datas = [
 ]
 datas += collect_data_files('yt_dlp')
 datas += collect_data_files('yt_dlp_ejs')
+datas += collect_data_files('curl_cffi')
 
 hidden_imports = [
     'PySide6.QtCore',
     'PySide6.QtGui',
     'PySide6.QtWidgets',
     'PySide6.QtSvg',
+    'curl_cffi',
+    '_cffi_backend',
     'yt_dlp',
     'yt_dlp.version',
     'yt_dlp.extractor',
@@ -35,6 +38,14 @@ hidden_imports = [
     'core.paths',
     'core.settings',
     'core.version',
+    'core.platform',
+    'core.platform.base',
+    'core.platform.capabilities',
+    'core.platform.detector',
+    'core.platform.registry',
+    'core.platform.youtube',
+    'core.platform.tiktok',
+    'core.platform.douyin',
     'downloader',
     'downloader.auth_checker',
     'downloader.deno_checker',
@@ -57,6 +68,7 @@ hidden_imports = [
     'gui.video_table',
     'gui.taskbar_progress',
 ]
+hidden_imports += collect_submodules('curl_cffi')
 
 a = Analysis(
     ['app.py'],

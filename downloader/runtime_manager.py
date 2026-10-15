@@ -21,11 +21,14 @@ import os
 import re
 import sys
 import json
+import platform
 import shutil
 import zipfile
 import logging
+import threading
 import subprocess
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple, Any
@@ -40,7 +43,13 @@ from core.paths import (
     get_app_data_dir,
     get_logs_dir,
 )
-from downloader.updater import YtDlpUpdater, parse_version, _is_dir_writable
+from downloader.updater import (
+    YtDlpUpdater,
+    parse_version,
+    _is_dir_writable,
+    validate_standalone_ytdlp,
+    invalidate_ytdlp_validation_cache,
+)
 from downloader.deno_checker import DenoChecker
 from downloader.ffmpeg_checker import FFmpegChecker
 from core.diagnostics import ErrorTracker
@@ -57,6 +66,15 @@ def _log_runtime(msg: str) -> None:
         pass
 
 
+from enum import Enum
+
+
+class ImpersonationState(str, Enum):
+    AVAILABLE = "IMPERSONATION_AVAILABLE"
+    UNAVAILABLE = "IMPERSONATION_UNAVAILABLE"
+    INCOMPATIBLE = "RUNTIME_INCOMPATIBLE"
+
+
 @dataclass
 class ComponentInfo:
     """Represents live status and version metadata for a runtime component."""
@@ -68,6 +86,15 @@ class ComponentInfo:
     status: str = "Checking"  # "Up to date", "Update available", "Not Found", "Error"
     error_message: str = ""
     path: str = ""
+    build_type: str = ""
+    architecture: str = ""
+    curl_cffi: str = ""
+    impersonation: str = ""
+    runtime_type: str = ""
+    curl_cffi_version: str = ""
+    impersonation_state: str = ""
+    available_targets: List[str] = field(default_factory=list)
+    default_target: str = ""
 
 
 class RuntimeManager:
@@ -93,13 +120,179 @@ class RuntimeManager:
     FFMPEG_GYAN_DOWNLOAD_URL = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
     FFMPEG_BTBN_GITHUB_API = "https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest"
 
+    # Cache file location in %APPDATA%/ChannelHarvest/runtime_cache.json
+    _CACHE_FILE_NAME = "runtime_cache.json"
+    _detect_lock = threading.Lock()
+
     # In-memory cache for fast, non-blocking UI access
     _cached_versions: Optional[Dict[str, ComponentInfo]] = None
+
+    @classmethod
+    def _get_cache_file_path(cls) -> Path:
+        return get_app_data_dir() / cls._CACHE_FILE_NAME
+
+    @classmethod
+    def _load_disk_cache(cls) -> Optional[Dict[str, ComponentInfo]]:
+        """
+        Loads cached component versions from disk if valid and binaries are unchanged.
+        Validates paths, file sizes, and modification timestamps in < 1 ms.
+        """
+        try:
+            cache_file = cls._get_cache_file_path()
+            if not cache_file.is_file():
+                return None
+
+            with open(cache_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+
+            if not isinstance(data, dict):
+                return None
+
+            for k in cls.ALL_COMPONENTS:
+                if k not in data:
+                    return None
+
+            # Invalidate stale cache if yt-dlp impersonation data is not yet recorded
+            ytdlp_cached = data.get(cls.KEY_YTDLP, {})
+            if not ytdlp_cached.get("impersonation_state"):
+                return None
+
+            results: Dict[str, ComponentInfo] = {}
+
+            for key in cls.ALL_COMPONENTS:
+                item = data[key]
+                path_str = item.get("path", "")
+
+                if key == cls.KEY_EJS:
+                    try:
+                        import yt_dlp_ejs
+                        cur_ver = getattr(yt_dlp_ejs, "__version__", getattr(yt_dlp_ejs, "version", "Unknown"))
+                        if cur_ver != item.get("current_version"):
+                            return None
+                    except Exception:
+                        return None
+                else:
+                    if not path_str:
+                        return None
+                    bin_path = Path(path_str)
+                    if not bin_path.is_file():
+                        return None
+
+                    st = bin_path.stat()
+                    if st.st_size != item.get("file_size"):
+                        return None
+                    cached_mtime = item.get("mtime_ns")
+                    cur_mtime = getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9))
+                    if cached_mtime is not None and cur_mtime != cached_mtime:
+                        return None
+
+                imp_state_val = item.get("impersonation_state", "")
+                try:
+                    imp_state = ImpersonationState(imp_state_val) if imp_state_val else ImpersonationState.UNAVAILABLE
+                except ValueError:
+                    imp_state = ImpersonationState.UNAVAILABLE
+
+                results[key] = ComponentInfo(
+                    key=item.get("key", key),
+                    display_name=item.get("display_name", key),
+                    current_version=item.get("current_version", ""),
+                    latest_version=item.get("latest_version", ""),
+                    status=item.get("status", "Up to date"),
+                    has_update=item.get("has_update", False),
+                    error_message=item.get("error_message", ""),
+                    path=path_str,
+                    build_type=item.get("build_type", ""),
+                    architecture=item.get("architecture", ""),
+                    curl_cffi=item.get("curl_cffi", ""),
+                    impersonation=item.get("impersonation", ""),
+                    runtime_type=item.get("runtime_type", ""),
+                    curl_cffi_version=item.get("curl_cffi_version", ""),
+                    impersonation_state=imp_state,
+                    available_targets=item.get("available_targets", []),
+                    default_target=item.get("default_target", ""),
+                )
+
+            return results
+        except Exception as e:
+            _logger.debug(f"Failed to load runtime cache: {e}")
+            return None
+
+    @classmethod
+    def _save_disk_cache(cls, components: Dict[str, ComponentInfo]) -> None:
+        """Saves verified component versions to persistent disk cache."""
+        try:
+            cache_file = cls._get_cache_file_path()
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            data = {}
+
+            for key, info in components.items():
+                entry: Dict[str, Any] = {
+                    "key": info.key,
+                    "display_name": info.display_name,
+                    "current_version": info.current_version,
+                    "latest_version": info.latest_version,
+                    "status": info.status,
+                    "has_update": info.has_update,
+                    "error_message": info.error_message,
+                    "path": info.path,
+                    "build_type": info.build_type,
+                    "architecture": info.architecture,
+                    "curl_cffi": info.curl_cffi,
+                    "impersonation": info.impersonation,
+                    "runtime_type": info.runtime_type,
+                    "curl_cffi_version": info.curl_cffi_version,
+                    "impersonation_state": info.impersonation_state.value if isinstance(info.impersonation_state, ImpersonationState) else str(info.impersonation_state or ""),
+                    "available_targets": info.available_targets,
+                    "default_target": info.default_target,
+                }
+                if info.path and Path(info.path).is_file():
+                    st = Path(info.path).stat()
+                    entry["file_size"] = st.st_size
+                    entry["mtime_ns"] = getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9))
+                data[key] = entry
+
+            temp_file = cache_file.with_suffix(".tmp")
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2)
+            temp_file.replace(cache_file)
+        except Exception as e:
+            _logger.debug(f"Failed to save runtime cache: {e}")
 
     @classmethod
     def invalidate_cache(cls) -> None:
         """Invalidates the in-memory cached component version details."""
         cls._cached_versions = None
+        invalidate_ytdlp_validation_cache()
+
+    @classmethod
+    def get_cached_versions_if_valid(cls) -> Optional[Dict[str, ComponentInfo]]:
+        """
+        Returns cached component versions if available in memory or persistent disk cache.
+        Does NOT execute any subprocesses. Returns in < 1 ms.
+        Returns None if cache is cold or invalid.
+        """
+        if cls._cached_versions is not None:
+            return {k: ComponentInfo(**v.__dict__) for k, v in cls._cached_versions.items()}
+
+        disk_cached = cls._load_disk_cache()
+        if disk_cached is not None:
+            cls._cached_versions = disk_cached
+            return {k: ComponentInfo(**v.__dict__) for k, v in disk_cached.items()}
+
+        return None
+
+    @classmethod
+    def get_placeholder_versions(cls) -> Dict[str, ComponentInfo]:
+        """
+        Returns immediate placeholder ComponentInfo objects for UI initial rendering.
+        Zero latency.
+        """
+        return {
+            cls.KEY_YTDLP: ComponentInfo(key=cls.KEY_YTDLP, display_name="yt-dlp", current_version="...", status="Detecting..."),
+            cls.KEY_EJS: ComponentInfo(key=cls.KEY_EJS, display_name="EJS", current_version="...", status="Detecting...", path="Python Package (yt-dlp-ejs)"),
+            cls.KEY_DENO: ComponentInfo(key=cls.KEY_DENO, display_name="Deno", current_version="...", status="Detecting..."),
+            cls.KEY_FFMPEG: ComponentInfo(key=cls.KEY_FFMPEG, display_name="FFmpeg", current_version="...", status="Detecting..."),
+        }
 
     # -------------------------------------------------------------------------
     # 1. Version Detection
@@ -107,92 +300,216 @@ class RuntimeManager:
 
     @classmethod
     def get_installed_versions(cls, force_refresh: bool = False) -> Dict[str, ComponentInfo]:
-        """Gathers live versions and status for all four runtime components."""
-        if not force_refresh and cls._cached_versions is not None:
-            return {
-                k: ComponentInfo(
-                    key=v.key,
-                    display_name=v.display_name,
-                    current_version=v.current_version,
-                    latest_version=v.latest_version,
-                    status=v.status,
-                    has_update=v.has_update,
-                    error_message=v.error_message,
-                    path=v.path,
+        """
+        Gathers live versions and status for all four runtime components.
+        Uses in-memory and persistent disk caching for instantaneous responses.
+        Uses concurrent thread execution for cold/forced checks.
+        """
+        if not force_refresh:
+            cached = cls.get_cached_versions_if_valid()
+            if cached is not None:
+                return cached
+
+        with cls._detect_lock:
+            # Re-check under lock in case another thread just completed detection
+            if not force_refresh:
+                cached = cls.get_cached_versions_if_valid()
+                if cached is not None:
+                    return cached
+
+            results: Dict[str, ComponentInfo] = {}
+
+            def _detect_ytdlp() -> ComponentInfo:
+                ytdlp_bin = get_bundled_executable("yt-dlp.exe")
+                build_type = "Unknown"
+                arch_type = "x86_64"
+                curl_cffi_status = "Unavailable"
+                curl_cffi_version = ""
+                impersonation_status = "Unavailable"
+                impersonation_state = ImpersonationState.UNAVAILABLE
+                available_targets: List[str] = []
+                default_target = ""
+                status_str = "Not Found"
+                err_msg = ""
+                ver = "Not Found"
+
+                is_frozen = getattr(sys, "frozen", False)
+                runtime_type = "Frozen Standalone (PyInstaller)" if is_frozen else f"Python {platform.python_version()} ({platform.python_implementation()})"
+
+                if ytdlp_bin and ytdlp_bin.is_file():
+                    is_valid, v_reason, v_info = validate_standalone_ytdlp(ytdlp_bin, force_refresh=force_refresh)
+                    ver = v_info.get("version") or "Unknown"
+                    build_type = v_info.get("build_type", "Unknown")
+                    arch_type = v_info.get("machine", "x86_64")
+                    curl_cffi_status = v_info.get("curl_cffi", "Unavailable")
+                    curl_cffi_version = v_info.get("curl_cffi_version", "")
+                    impersonation_status = v_info.get("impersonation", "Unavailable")
+                    impersonation_state = v_info.get("impersonation_state", ImpersonationState.UNAVAILABLE)
+                    available_targets = list(v_info.get("available_targets", []))
+                    default_target = v_info.get("default_target", "")
+                    if not is_valid:
+                        status_str = "INVALID — Python-dependent launcher" if ("launcher" in v_reason.lower() or "script wrapper" in v_reason.lower()) else "Error"
+                        err_msg = v_reason
+                        impersonation_state = ImpersonationState.INCOMPATIBLE
+                    else:
+                        status_str = "Up to date"
+                elif not ytdlp_bin:
+                    # In-process python detection fallback
+                    try:
+                        import yt_dlp
+                        ver = getattr(yt_dlp.version, "__version__", "Unknown")
+                        build_type = "Python In-process"
+                        status_str = "Up to date"
+                    except Exception as e:
+                        err_msg = f"Bundled yt-dlp.exe not found and module import failed: {e}"
+                        impersonation_state = ImpersonationState.INCOMPATIBLE
+
+                # Also verify in-process curl_cffi and available targets
+                try:
+                    import curl_cffi
+                    in_proc_curl_ver = getattr(curl_cffi, "__version__", "")
+                    if not curl_cffi_version and in_proc_curl_ver:
+                        curl_cffi_version = in_proc_curl_ver
+                        curl_cffi_status = "Available"
+
+                    if not available_targets:
+                        try:
+                            import yt_dlp.networking._curlcffi as c_rh
+                            rh = getattr(c_rh, "CurlCFFIRH", None)
+                            if rh and hasattr(rh, "supported_targets"):
+                                for t in rh.supported_targets:
+                                    available_targets.append(str(t))
+                                if available_targets:
+                                    impersonation_status = f"Available ({len(available_targets)} targets)"
+                                    if impersonation_state != ImpersonationState.INCOMPATIBLE:
+                                        impersonation_state = ImpersonationState.AVAILABLE
+                                    default_target = "chrome"
+                        except Exception:
+                            pass
+                    elif impersonation_state != ImpersonationState.INCOMPATIBLE:
+                        impersonation_state = ImpersonationState.AVAILABLE
+                except ImportError:
+                    pass
+
+                return ComponentInfo(
+                    key=cls.KEY_YTDLP,
+                    display_name="yt-dlp",
+                    current_version=ver,
+                    status=status_str,
+                    error_message=err_msg,
+                    path=str(ytdlp_bin) if ytdlp_bin else "Python In-process",
+                    build_type=build_type,
+                    architecture=arch_type,
+                    curl_cffi=curl_cffi_status,
+                    impersonation=impersonation_status,
+                    runtime_type=runtime_type,
+                    curl_cffi_version=curl_cffi_version,
+                    impersonation_state=impersonation_state,
+                    available_targets=available_targets,
+                    default_target=default_target,
                 )
-                for k, v in cls._cached_versions.items()
-            }
 
-        results: Dict[str, ComponentInfo] = {}
+            def _detect_deno() -> ComponentInfo:
+                is_deno_ok, deno_path, deno_ver, _ = DenoChecker.detect(force_refresh=force_refresh)
+                return ComponentInfo(
+                    key=cls.KEY_DENO,
+                    display_name="Deno",
+                    current_version=deno_ver if is_deno_ok else "Not Found",
+                    status="Up to date" if is_deno_ok else "Not Found",
+                    path=str(deno_path) if deno_path else "",
+                )
 
-        # 1. yt-dlp
-        ytdlp_ver = YtDlpUpdater.get_installed_version(force_refresh=force_refresh)
-        ytdlp_bin = get_bundled_executable("yt-dlp.exe")
-        ytdlp_ok = ytdlp_ver not in ("Unknown", "", "Not Found")
-        results[cls.KEY_YTDLP] = ComponentInfo(
-            key=cls.KEY_YTDLP,
-            display_name="yt-dlp",
-            current_version=ytdlp_ver,
-            status="Up to date" if ytdlp_ok else "Not Found",
-            path=str(ytdlp_bin) if ytdlp_bin else "",
-        )
+            def _detect_ffmpeg() -> ComponentInfo:
+                is_ffmpeg_ok, ffmpeg_path, ffmpeg_ver, _ = FFmpegChecker.detect(force_refresh=force_refresh)
+                parsed_ver = ffmpeg_ver
+                m = re.search(r"(\d+\.\d+(?:\.\d+)?)", ffmpeg_ver)
+                if m:
+                    parsed_ver = m.group(1)
+                return ComponentInfo(
+                    key=cls.KEY_FFMPEG,
+                    display_name="FFmpeg",
+                    current_version=parsed_ver if is_ffmpeg_ok else "Not Found",
+                    status="Up to date" if is_ffmpeg_ok else "Not Found",
+                    path=str(ffmpeg_path) if ffmpeg_path else "",
+                )
 
-        # 2. EJS (yt-dlp-ejs)
-        ejs_ver = "Not Installed"
-        try:
-            import yt_dlp_ejs
-            ejs_ver = getattr(yt_dlp_ejs, "__version__", getattr(yt_dlp_ejs, "version", "Unknown"))
-        except ImportError:
-            pass
-        ejs_ok = ejs_ver not in ("Not Installed", "Unknown", "")
-        results[cls.KEY_EJS] = ComponentInfo(
-            key=cls.KEY_EJS,
-            display_name="EJS",
-            current_version=ejs_ver,
-            status="Up to date" if ejs_ok else "Not Installed",
-            path="Python Package (yt-dlp-ejs)",
-        )
+            # Run external binary detections concurrently
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                future_ytdlp = executor.submit(_detect_ytdlp)
+                future_deno = executor.submit(_detect_deno)
+                future_ffmpeg = executor.submit(_detect_ffmpeg)
 
-        # 3. Deno
-        is_deno_ok, deno_path, deno_ver, _ = DenoChecker.detect(force_refresh=force_refresh)
-        results[cls.KEY_DENO] = ComponentInfo(
-            key=cls.KEY_DENO,
-            display_name="Deno",
-            current_version=deno_ver if is_deno_ok else "Not Found",
-            status="Up to date" if is_deno_ok else "Not Found",
-            path=str(deno_path) if deno_path else "",
-        )
+                # In-process: EJS
+                ejs_ver = "Not Installed"
+                try:
+                    import yt_dlp_ejs
+                    ejs_ver = getattr(yt_dlp_ejs, "__version__", getattr(yt_dlp_ejs, "version", "Unknown"))
+                except ImportError:
+                    pass
+                ejs_ok = ejs_ver not in ("Not Installed", "Unknown", "")
+                results[cls.KEY_EJS] = ComponentInfo(
+                    key=cls.KEY_EJS,
+                    display_name="EJS",
+                    current_version=ejs_ver,
+                    status="Up to date" if ejs_ok else "Not Installed",
+                    path="Python Package (yt-dlp-ejs)",
+                )
 
-        # 4. FFmpeg
-        is_ffmpeg_ok, ffmpeg_path, ffmpeg_ver, _ = FFmpegChecker.detect(force_refresh=force_refresh)
-        # Parse clean semver or release tag
-        parsed_ver = ffmpeg_ver
-        m = re.search(r"(\d+\.\d+(?:\.\d+)?)", ffmpeg_ver)
-        if m:
-            parsed_ver = m.group(1)
-        results[cls.KEY_FFMPEG] = ComponentInfo(
-            key=cls.KEY_FFMPEG,
-            display_name="FFmpeg",
-            current_version=parsed_ver if is_ffmpeg_ok else "Not Found",
-            status="Up to date" if is_ffmpeg_ok else "Not Found",
-            path=str(ffmpeg_path) if ffmpeg_path else "",
-        )
+                results[cls.KEY_YTDLP] = future_ytdlp.result()
+                results[cls.KEY_DENO] = future_deno.result()
+                results[cls.KEY_FFMPEG] = future_ffmpeg.result()
 
-        cls._cached_versions = {
-            k: ComponentInfo(
-                key=v.key,
-                display_name=v.display_name,
-                current_version=v.current_version,
-                latest_version=v.latest_version,
-                status=v.status,
-                has_update=v.has_update,
-                error_message=v.error_message,
-                path=v.path,
-            )
-            for k, v in results.items()
+            cls._cached_versions = {k: ComponentInfo(**v.__dict__) for k, v in results.items()}
+            cls._save_disk_cache(results)
+            return {k: ComponentInfo(**v.__dict__) for k, v in results.items()}
+
+    @classmethod
+    def get_impersonation_diagnostic(cls, force_refresh: bool = False) -> Dict[str, Any]:
+        """
+        Inspects live impersonation and curl_cffi readiness across both
+        in-process Python runtime and bundled standalone yt-dlp binary.
+
+        Returns a dictionary containing:
+        - impersonation_state: IMPERSONATION_AVAILABLE | IMPERSONATION_UNAVAILABLE | RUNTIME_INCOMPATIBLE
+        - ytdlp_version: yt-dlp version string
+        - ytdlp_build_type: build type (e.g. Windows x64 Standalone)
+        - runtime_type: Python or Frozen application descriptor
+        - curl_cffi_available: bool
+        - curl_cffi_version: version string
+        - available_targets: list of impersonation targets
+        - default_target: selected/default impersonation target
+        - ffmpeg_status: FFmpeg detection status
+        """
+        versions = cls.get_installed_versions(force_refresh=force_refresh)
+        ytdlp_info = versions.get(cls.KEY_YTDLP)
+        ffmpeg_info = versions.get(cls.KEY_FFMPEG)
+
+        y_ver = ytdlp_info.current_version if ytdlp_info else "Unknown"
+        y_build = ytdlp_info.build_type if ytdlp_info else "Unknown"
+        r_type = ytdlp_info.runtime_type if ytdlp_info else "Unknown"
+        curl_avail = bool(ytdlp_info and ytdlp_info.curl_cffi and ytdlp_info.curl_cffi != "Unavailable")
+        curl_ver = ytdlp_info.curl_cffi_version if ytdlp_info else ""
+        targets = list(ytdlp_info.available_targets) if ytdlp_info else []
+        def_tgt = ytdlp_info.default_target if ytdlp_info else ""
+        imp_state = ytdlp_info.impersonation_state if ytdlp_info else ImpersonationState.UNAVAILABLE
+        if isinstance(imp_state, ImpersonationState):
+            imp_state_val = imp_state.value
+        else:
+            imp_state_val = str(imp_state or ImpersonationState.UNAVAILABLE.value)
+        ff_status = ffmpeg_info.status if ffmpeg_info else "Unknown"
+
+        return {
+            "impersonation_state": imp_state_val,
+            "state": imp_state_val,
+            "ytdlp_version": y_ver,
+            "ytdlp_build_type": y_build,
+            "runtime_type": r_type,
+            "curl_cffi_available": curl_avail,
+            "curl_cffi_version": curl_ver,
+            "available_targets": targets,
+            "default_target": def_tgt,
+            "ffmpeg_status": ff_status,
         }
-
-        return results
 
     # -------------------------------------------------------------------------
     # 2. Check for Updates
@@ -718,3 +1035,23 @@ class InstallRuntimeWorker(QThread):
             self.component_finished.emit(key, success, new_ver, err)
 
         self.all_finished.emit(success_count, fail_count)
+
+
+class DetectRuntimeWorker(QThread):
+    """
+    Background worker thread detecting installed versions for all 4 runtime components
+    without blocking the GUI thread.
+    """
+    detection_completed = Signal(dict)
+
+    def __init__(self, force_refresh: bool = False, parent: Optional[QObject] = None):
+        super().__init__(parent)
+        self.force_refresh = force_refresh
+
+    def run(self):
+        try:
+            results = RuntimeManager.get_installed_versions(force_refresh=self.force_refresh)
+            self.detection_completed.emit(results)
+        except Exception:
+            pass
+

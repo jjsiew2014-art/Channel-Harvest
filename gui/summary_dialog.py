@@ -66,7 +66,7 @@ class SummaryDialog(QDialog):
         # Header Title (Main Heading Format & Size)
         title_label = QLabel(tr("summary_header_title"))
         title_label.setObjectName("summaryTitleLabel")
-        title_font = QFont()
+        title_font = title_label.font()
         title_font.setPointSize(15)
         title_font.setBold(True)
         title_label.setFont(title_font)

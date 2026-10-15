@@ -397,6 +397,11 @@ QComboBox QAbstractItemView {
     outline: none;
 }
 
+QComboBox QAbstractItemView::item:disabled {
+    color: #94a3b8;
+    background-color: transparent;
+}
+
 /* Push Buttons (Default Base) */
 QPushButton {
     background-color: #ffffff;
@@ -720,6 +725,10 @@ QCheckBox {
     background: transparent;
 }
 
+QCheckBox:disabled {
+    color: #94a3b8;
+}
+
 QCheckBox::indicator {
     width: 17px;
     height: 17px;
@@ -730,6 +739,11 @@ QCheckBox::indicator {
 
 QCheckBox::indicator:hover {
     border-color: #0066cc;
+}
+
+QCheckBox::indicator:disabled {
+    background-color: #f1f5f9;
+    border-color: #e2e8f0;
 }
 
 QCheckBox::indicator:checked {
@@ -1257,6 +1271,11 @@ QComboBox QAbstractItemView {
     outline: none;
 }
 
+QComboBox QAbstractItemView::item:disabled {
+    color: #64748b;
+    background-color: transparent;
+}
+
 /* Push Buttons (Default Base) */
 QPushButton {
     background-color: #1e293b;
@@ -1577,6 +1596,10 @@ QCheckBox {
     background: transparent;
 }
 
+QCheckBox:disabled {
+    color: #64748b;
+}
+
 QCheckBox::indicator {
     width: 17px;
     height: 17px;
@@ -1587,6 +1610,11 @@ QCheckBox::indicator {
 
 QCheckBox::indicator:hover {
     border-color: #0284c7;
+}
+
+QCheckBox::indicator:disabled {
+    background-color: #0f172a;
+    border-color: #334155;
 }
 
 QCheckBox::indicator:checked {
@@ -1884,10 +1912,11 @@ class ThemeManager:
             from PySide6.QtGui import QFont
             try:
                 from core.i18n import I18nManager
-                if I18nManager.is_chinese():
-                    qapp.setFont(QFont("Noto Sans SC"))
-                else:
-                    qapp.setFont(QFont("Segoe UI"))
+                font_family = "Noto Sans SC" if I18nManager.is_chinese() else "Segoe UI"
+                base_font = QFont(font_family, 9)
+                if base_font.pointSize() <= 0:
+                    base_font.setPointSize(9)
+                qapp.setFont(base_font)
             except Exception:
                 pass
 

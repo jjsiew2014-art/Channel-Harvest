@@ -66,7 +66,7 @@ class ErrorDetailsDialog(QDialog):
         title_text = self.error.get_localized_title() if hasattr(self.error, "get_localized_title") else (self.error.title or tr("error"))
         title_label = QLabel(f"⚠️ {title_text}")
         title_label.setObjectName("errorDialogTitle")
-        title_font = QFont()
+        title_font = title_label.font()
         title_font.setPointSize(14)
         title_font.setBold(True)
         title_label.setFont(title_font)

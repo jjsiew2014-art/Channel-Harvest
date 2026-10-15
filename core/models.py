@@ -3,9 +3,9 @@ models.py
 Data structures representing videos, download settings, and queue states.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 
 
 # =============================================================================
@@ -28,7 +28,8 @@ class DownloadMode:
     VIDEO_ONLY = "Video Only"
     AUDIO_ONLY = "Audio Only"
     VIDEO_AND_AUDIO = "Video + Audio"
-    SUBTITLE_ONLY = "Subtitle Only"
+    ASSETS_ONLY = "Assets Only"
+    SUBTITLE_ONLY = ASSETS_ONLY
 
 
 class SubtitleSource:
@@ -87,6 +88,8 @@ class VideoItem:
     channel_title: str = ""
     error_reason: str = ""
     error_details: Optional[Any] = None
+    platform: str = "youtube"
+    extra_metadata: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -95,7 +98,7 @@ class DownloadSettings:
     User-configurable download options selected in the GUI.
 
     Attributes:
-        download_mode: Target mode (Video Only, Audio Only, Video + Audio, Subtitle Only).
+        download_mode: Target mode (Video Only, Audio Only, Video + Audio, Assets Only).
         format: Selected video container format (MP4, MKV, WEBM, MOV).
         quality: Selected video resolution (Best Available, 1080p, 720p, etc.).
         bitrate: Selected video bitrate preference (Best Available, 5000 kbps, etc.).
@@ -113,6 +116,7 @@ class DownloadSettings:
         download_folder: Target destination folder path on Windows.
         create_channel_folder: If True, saves into a subfolder named after the channel.
         create_individual_video_folders: If True, saves each video's files into its own folder.
+        include_video_id_in_filename: If True, appends YouTube video ID to generated filenames.
         skip_existing: If True, uses the download archive to skip already finished videos.
         channel_title: Channel title used for subfolder naming.
         browser_cookies: Browser name for cookie extraction ('none', 'chrome', 'edge', 'firefox', etc.).
@@ -136,10 +140,15 @@ class DownloadSettings:
     download_folder: str = str(Path.home() / "Downloads" / "Channel Harvest")
     create_channel_folder: bool = True
     create_individual_video_folders: bool = False
+    include_video_id_in_filename: bool = False
     skip_existing: bool = False
     channel_title: str = ""
     auth_method: str = "none"
     browser_cookies: str = "none"
     browser_profile: str = "Default"
     custom_cookie_file: str = ""
+    douyin_auth_method: str = "none"
+    douyin_browser_cookies: str = "none"
+    douyin_browser_profile: str = "Default"
+    douyin_custom_cookie_file: str = ""
 

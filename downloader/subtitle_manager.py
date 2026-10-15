@@ -31,6 +31,7 @@ from yt_dlp.utils import DownloadError, ExtractorError
 from PySide6.QtCore import QThread, Signal, QObject
 
 from core.models import VideoItem, DownloadSettings, SubtitleSource, SubtitleLanguage
+from core.paths import resolve_media_filename, get_temp_dir
 from downloader.ytdlp_engine import YtDlpEngine
 
 
@@ -118,6 +119,7 @@ class SubtitleManager:
             log_callback=log_callback,
             quiet=True,
             no_warnings=True,
+            platform="youtube",
         )
         ydl_opts.update({
             "skip_download": True,
@@ -243,10 +245,10 @@ class SubtitleManager:
             }
 
     @classmethod
-    def get_target_srt_path(cls, video: VideoItem, target_dir: Path) -> Path:
+    def get_target_srt_path(cls, video: VideoItem, target_dir: Path, include_video_id: bool = True) -> Path:
         """Returns expected default SRT file path for a video item."""
-        clean_title = re.sub(r'[\\/*?:"<>|]', "_", video.title).strip()
-        return target_dir / f"{clean_title} [{video.video_id}].srt"
+        filename = resolve_media_filename(video.title, video.video_id, ext="srt", include_video_id=include_video_id)
+        return target_dir / filename
 
     @classmethod
     def is_subtitle_downloaded(
@@ -258,16 +260,20 @@ class SubtitleManager:
         """
         Independent check verifying whether the target subtitle file already exists and is valid.
         """
-        clean_title = re.sub(r'[\\/*?:"<>|]', "_", video.title).strip()
+        inc_id = getattr(settings, "include_video_id_in_filename", False)
+        stem = resolve_media_filename(video.title, video.video_id, include_video_id=inc_id)
 
-        # 1. Check clean single-language filename: <title> [<id>].srt
-        exact_file = target_dir / f"{clean_title} [{video.video_id}].srt"
+        # 1. Check clean single-language filename: <stem>.srt
+        exact_file = target_dir / f"{stem}.srt"
         if exact_file.is_file() and exact_file.stat().st_size > 0:
             return True
 
-        # 2. Check language-tagged filenames: <title> [<id>].<lang>.srt
+        # 2. Check language-tagged filenames: <stem>.<lang>.srt
         for cand in target_dir.glob("*.srt"):
-            if video.video_id in cand.name and cand.is_file() and cand.stat().st_size > 0:
+            if not (cand.is_file() and cand.stat().st_size > 0):
+                continue
+            matches = (video.video_id and video.video_id in cand.name) or cand.name.startswith(f"{stem}.")
+            if matches:
                 if settings.subtitle_language != SubtitleLanguage.ALL:
                     parts = cand.stem.split(".")
                     if len(parts) >= 2:
@@ -306,6 +312,18 @@ class SubtitleManager:
         if cancel_check and cancel_check():
             return {"success": False, "skipped": False, "status_text": "Cancelled", "saved_files": [], "error": "Cancelled"}
 
+        from core.platform import PlatformRegistry
+        adapter = PlatformRegistry.get_adapter(getattr(video, "platform", "youtube"))
+        if adapter and not adapter.capabilities.supports_subtitles:
+            return {
+                "success": False,
+                "skipped": True,
+                "sub_type": "",
+                "status_text": "—",
+                "saved_files": [],
+                "error": f"Subtitles not supported for {adapter.display_name}",
+            }
+
         clean_title = re.sub(r'[\\/*?:"<>|]', "_", video.title).strip()
         target_dir.mkdir(parents=True, exist_ok=True)
         video_url = video.url if video.url else f"https://www.youtube.com/watch?v={video.video_id}"
@@ -319,7 +337,7 @@ class SubtitleManager:
                 "skipped": True,
                 "sub_type": "Existing",
                 "status_text": "✓ Subtitle Ready",
-                "saved_files": [cls.get_target_srt_path(video, target_dir)],
+                "saved_files": [cls.get_target_srt_path(video, target_dir, include_video_id=getattr(settings, "include_video_id_in_filename", False))],
                 "error": "",
             }
 
@@ -419,13 +437,17 @@ class SubtitleManager:
             log_callback(f"[SUBTITLE] Downloading {resolved_type} subtitle: {video.title} (langs={sub_langs})...")
 
         # 3. Configure yt-dlp for Subtitle Retrieval & SRT Conversion
-        outtmpl_pattern = str(target_dir / f"{clean_title} [{video.video_id}].%(ext)s")
+        inc_id = getattr(settings, "include_video_id_in_filename", False)
+        stem = resolve_media_filename(video.title, video.video_id, include_video_id=inc_id)
+        outtmpl_pattern = str(target_dir / f"{stem}.%(ext)s")
 
+        platform = getattr(video, "platform", "youtube")
         ydl_opts: Dict[str, Any] = YtDlpEngine.build_base_ydl_opts(
             log_callback=log_callback,
             browser_cookies=settings.browser_cookies,
             quiet=True,
             no_warnings=True,
+            platform=platform,
         )
         ydl_opts.update({
             "skip_download": True,
@@ -443,6 +465,10 @@ class SubtitleManager:
                 }
             ],
             "outtmpl": outtmpl_pattern,
+            "paths": {
+                "home": str(target_dir),
+                "temp": str(get_temp_dir()),
+            },
         })
 
         if ffmpeg_location:
@@ -465,19 +491,22 @@ class SubtitleManager:
             }
 
         # 4. Locate generated subtitle files
-        default_srt = target_dir / f"{clean_title} [{video.video_id}].srt"
+        default_srt = target_dir / f"{stem}.srt"
         saved_paths: List[Path] = []
 
         if default_srt.is_file() and default_srt.stat().st_size > 0:
             saved_paths.append(default_srt)
 
         for cand in target_dir.glob("*.srt"):
-            if video.video_id in cand.name and cand.is_file() and cand.stat().st_size > 0:
+            if not (cand.is_file() and cand.stat().st_size > 0):
+                continue
+            matches = (video.video_id and video.video_id in cand.name) or cand.name.startswith(f"{stem}.")
+            if matches:
                 if cand not in saved_paths:
                     saved_paths.append(cand)
 
         # If clean single language requested and exactly one language-tagged SRT exists,
-        # normalize name to '<title> [<id>].srt' for seamless video player and editor matching
+        # normalize name to '<stem>.srt' for seamless video player and editor matching
         if not is_all_languages and len(saved_paths) == 1 and saved_paths[0] != default_srt:
             single_path = saved_paths[0]
             try:
@@ -551,6 +580,11 @@ class SubtitleDetectionWorker(QThread):
 
         def check_single_video(video: VideoItem):
             if self._is_cancelled:
+                return
+            from core.platform import PlatformRegistry
+            adapter = PlatformRegistry.get_adapter(getattr(video, "platform", "youtube"))
+            if adapter and not adapter.capabilities.supports_subtitles:
+                self.video_subtitle_detected.emit(video.video_id, "—", "")
                 return
             res = SubtitleManager.detect_subtitles_info(video.video_id)
             if not self._is_cancelled:

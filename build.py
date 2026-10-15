@@ -29,6 +29,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from core.version import __version__, __app_name__
+from downloader.updater import validate_standalone_ytdlp
 
 
 def print_step(step_name: str) -> None:
@@ -95,47 +96,153 @@ def ensure_icon() -> None:
 
 
 def ensure_dependencies() -> bool:
-    """Verifies that yt-dlp and yt-dlp-ejs are installed and compatible."""
-    print_step("Verifying Python Dependencies (yt-dlp, yt-dlp-ejs)")
+    """Verifies that yt-dlp, yt-dlp-ejs, and curl_cffi are installed and compatible."""
+    print_step("Verifying Python Dependencies (yt-dlp, yt-dlp-ejs, curl_cffi)")
+    all_ok = True
     try:
         import yt_dlp
-        import yt_dlp_ejs
         print_success(f"yt-dlp version: {getattr(yt_dlp.version, '__version__', 'unknown')}")
+    except ImportError as e:
+        print_error(f"Missing dependency yt-dlp: {e}")
+        all_ok = False
+
+    try:
+        import yt_dlp_ejs
         print_success(f"yt-dlp-ejs version: {getattr(yt_dlp_ejs, 'version', 'unknown')}")
-        return True
     except ImportError as e:
         print_error(f"Missing dependency: {e}. Installing yt-dlp-ejs...")
         try:
             subprocess.run([sys.executable, "-m", "pip", "install", "yt-dlp-ejs"], check=True)
-            return True
+            print_success("yt-dlp-ejs installed.")
         except Exception as install_err:
             print_error(f"Failed to install yt-dlp-ejs: {install_err}")
-            return False
+            all_ok = False
+
+    try:
+        import curl_cffi
+        print_success(f"curl_cffi version: {getattr(curl_cffi, '__version__', 'unknown')}")
+    except ImportError as e:
+        print_error(f"Missing dependency: {e}. Installing curl_cffi...")
+        try:
+            subprocess.run([sys.executable, "-m", "pip", "install", "curl_cffi"], check=True)
+            print_success("curl_cffi installed.")
+        except Exception as install_err:
+            print_error(f"Failed to install curl_cffi: {install_err}")
+            all_ok = False
+
+    return all_ok
 
 
 def stage_runtime_binaries(target_dir: Path) -> bool:
     """
-    Stages ffmpeg.exe, ffprobe.exe, and yt-dlp.exe into target_dir.
-    Searches project runtime/, developer WinGet/Python locations, system PATH,
-    or downloads official releases if missing.
+    Stages ffmpeg.exe, ffprobe.exe, yt-dlp.exe, and deno.exe into target_dir.
+    Enforces that yt-dlp.exe is an official standalone Windows x64 binary with curl_cffi.
+    Rejects pip wrappers, simple_launcher stubs, and developer Python-dependent scripts.
     """
     print_step("Staging Runtime Binaries (ffmpeg, ffprobe, yt-dlp, deno)")
     target_dir.mkdir(parents=True, exist_ok=True)
-
-    binaries_to_find = ["ffmpeg.exe", "ffprobe.exe", "yt-dlp.exe", "deno.exe"]
     all_ok = True
 
-    # Search candidates
+    # -------------------------------------------------------------------------
+    # 1. Stage yt-dlp.exe (Strict standalone Windows x64 binary requirement)
+    # -------------------------------------------------------------------------
+    print("[INFO] Checking standalone yt-dlp.exe requirement...")
+    dest_ytdlp = target_dir / "yt-dlp.exe"
+    ytdlp_ready = False
+
+    # Check existing binary in target_dir
+    if dest_ytdlp.is_file():
+        is_valid, reason, info = validate_standalone_ytdlp(dest_ytdlp)
+        if is_valid:
+            print_success(
+                f"Existing standalone yt-dlp ready: {dest_ytdlp} "
+                f"(v{info.get('version')}, {info.get('build_type')}, {dest_ytdlp.stat().st_size:,} bytes, {info.get('impersonation')})"
+            )
+            ytdlp_ready = True
+        else:
+            print(f"[WARNING] Existing binary at {dest_ytdlp} is invalid: {reason}")
+            print(f"[INFO] Removing non-standalone binary from {dest_ytdlp}...")
+            dest_ytdlp.unlink(missing_ok=True)
+
+    # Check project runtime directory if target_dir is different
+    if not ytdlp_ready and target_dir.resolve() != (PROJECT_ROOT / "runtime").resolve():
+        proj_ytdlp = PROJECT_ROOT / "runtime" / "yt-dlp.exe"
+        if proj_ytdlp.is_file():
+            is_valid, reason, info = validate_standalone_ytdlp(proj_ytdlp)
+            if is_valid:
+                shutil.copy2(proj_ytdlp, dest_ytdlp)
+                print_success(
+                    f"Staged standalone yt-dlp from project runtime: {proj_ytdlp} -> {dest_ytdlp} "
+                    f"(v{info.get('version')}, {info.get('build_type')})"
+                )
+                ytdlp_ready = True
+            else:
+                print(f"[WARNING] Project runtime binary {proj_ytdlp} is invalid: {reason}")
+
+    # Fallback download official standalone Windows x64 release
+    if not ytdlp_ready:
+        print("[INFO] Downloading official standalone yt-dlp.exe from GitHub Releases...")
+        import urllib.request
+
+        download_urls = [
+            "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp.exe",
+            "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe",
+        ]
+        temp_dest = target_dir / "temp_yt-dlp.exe"
+        if temp_dest.exists():
+            temp_dest.unlink(missing_ok=True)
+
+        download_success = False
+        for url in download_urls:
+            try:
+                print(f"[INFO] Fetching {url}...")
+                req = urllib.request.Request(
+                    url,
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) ChannelHarvest-Build"},
+                )
+                with urllib.request.urlopen(req, timeout=120) as resp, open(temp_dest, "wb") as out_f:
+                    shutil.copyfileobj(resp, out_f)
+
+                # Validate downloaded binary before accepting
+                is_valid, reason, info = validate_standalone_ytdlp(temp_dest)
+                if is_valid:
+                    if dest_ytdlp.exists():
+                        dest_ytdlp.unlink(missing_ok=True)
+                    temp_dest.replace(dest_ytdlp)
+                    print_success(
+                        f"Downloaded and validated official standalone yt-dlp to {dest_ytdlp} "
+                        f"(v{info.get('version')}, {info.get('build_type')}, {dest_ytdlp.stat().st_size:,} bytes)"
+                    )
+                    download_success = True
+                    ytdlp_ready = True
+                    break
+                else:
+                    print_error(f"Downloaded yt-dlp binary from {url} failed validation: {reason}")
+                    temp_dest.unlink(missing_ok=True)
+            except Exception as dl_err:
+                print_error(f"Download failed from {url}: {dl_err}")
+                if temp_dest.exists():
+                    temp_dest.unlink(missing_ok=True)
+
+        if not download_success:
+            print_error(
+                "FATAL: Could not locate or download a valid official standalone Windows x64 yt-dlp binary.\n"
+                "Release build aborted to prevent bundling broken/python-dependent wrappers."
+            )
+            all_ok = False
+
+    # -------------------------------------------------------------------------
+    # 2. Stage other runtime binaries (ffmpeg, ffprobe, deno)
+    #    (Excludes developer Python directories from search paths)
+    # -------------------------------------------------------------------------
+    other_binaries = ["ffmpeg.exe", "ffprobe.exe", "deno.exe"]
     search_paths = [
         PROJECT_ROOT / "runtime",
         Path(os.environ.get("USERPROFILE", "")) / ".deno" / "bin",
         Path(os.environ.get("LOCALAPPDATA", "")) / "Microsoft" / "WinGet" / "Packages",
-        Path(os.environ.get("LOCALAPPDATA", "")) / "Python" / "pythoncore-3.14-64" / "Scripts",
-        Path(sys.executable).parent / "Scripts",
-        Path(sys.executable).parent,
     ]
 
-    for bin_name in binaries_to_find:
+    for bin_name in other_binaries:
         dest_bin = target_dir / bin_name
         if dest_bin.is_file() and dest_bin.stat().st_size > 0:
             print_success(f"Existing binary ready: {dest_bin} ({dest_bin.stat().st_size:,} bytes)")
@@ -143,7 +250,7 @@ def stage_runtime_binaries(target_dir: Path) -> bool:
 
         found_path: Optional[Path] = None
 
-        # 1. Search in candidates
+        # Search candidates
         for sp in search_paths:
             if not sp.exists():
                 continue
@@ -157,7 +264,7 @@ def stage_runtime_binaries(target_dir: Path) -> bool:
                     found_path = matches[0]
                     break
 
-        # 2. Check system PATH
+        # Check system PATH
         if not found_path:
             which_res = shutil.which(bin_name)
             if which_res:
@@ -167,19 +274,8 @@ def stage_runtime_binaries(target_dir: Path) -> bool:
             shutil.copy2(found_path, dest_bin)
             print_success(f"Staged {bin_name} from {found_path} -> {dest_bin}")
         else:
-            # 3. Fallback download for yt-dlp.exe or deno.exe
-            if bin_name == "yt-dlp.exe":
-                print(f"[INFO] Downloading official yt-dlp.exe from GitHub Releases...")
-                import urllib.request
-                url = "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe"
-                try:
-                    urllib.request.urlretrieve(url, dest_bin)
-                    print_success(f"Downloaded official {bin_name} to {dest_bin}")
-                except Exception as e:
-                    print_error(f"Failed to download {bin_name}: {e}")
-                    all_ok = False
-            elif bin_name == "deno.exe":
-                print(f"[INFO] Downloading official Deno runtime from GitHub Releases...")
+            if bin_name == "deno.exe":
+                print("[INFO] Downloading official Deno runtime from GitHub Releases...")
                 import urllib.request
                 zip_temp = target_dir / "deno_temp.zip"
                 url = "https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip"
@@ -362,6 +458,24 @@ def main() -> None:
         if src_asset.is_file():
             shutil.copy2(src_asset, dist_root / asset_name)
     print_success(f"Copied root assets into {dist_root}")
+
+    # 5b. Post-copy validation check: verify dist/ChannelHarvest/runtime/yt-dlp.exe
+    print_step("Validating Distribution Runtime yt-dlp.exe")
+    dist_ytdlp = dist_runtime / "yt-dlp.exe"
+    if not dist_ytdlp.is_file():
+        print_error(f"POST-BUILD VERIFICATION FAILED: {dist_ytdlp} does not exist in distribution bundle.")
+        sys.exit(1)
+
+    is_valid, reason, info = validate_standalone_ytdlp(dist_ytdlp)
+    if not is_valid:
+        print_error(f"POST-BUILD VERIFICATION FAILED for {dist_ytdlp}: {reason}")
+        print_error("Build rejected: Non-standalone or python-dependent yt-dlp executable detected in dist bundle.")
+        sys.exit(1)
+
+    print_success(
+        f"Verified distribution yt-dlp.exe: version {info.get('version')} ({info.get('build_type')}) | "
+        f"Arch: {info.get('machine')} | curl_cffi: {info.get('curl_cffi')} | {info.get('impersonation')}"
+    )
 
 
     # 6. Release packaging

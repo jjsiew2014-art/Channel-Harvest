@@ -55,6 +55,7 @@ class VideoTableWidget(QWidget):
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self._videos: List[VideoItem] = []
+        self._current_platform: str = "youtube"
         self._init_ui()
         I18nManager.register_listener(self._on_language_updated)
 
@@ -204,8 +205,38 @@ class VideoTableWidget(QWidget):
         self.view_stack.setCurrentWidget(self.empty_widget)
 
         layout.addWidget(self.view_stack)
-
         self.retranslate_ui()
+
+    def set_platform(self, platform_id: str) -> None:
+        """
+        Configures table column visibility and layout based on active platform capabilities.
+        Hides the Subtitle column on TikTok and stretches Video Title horizontally across reclaimed space.
+        """
+        self._current_platform = platform_id
+        is_tiktok = (platform_id == "tiktok")
+        is_douyin = (platform_id == "douyin")
+        self.set_subtitle_column_visible(not (is_tiktok or is_douyin))
+        if hasattr(self, "empty_subtitle"):
+            if is_douyin:
+                self.empty_subtitle.setText(tr("empty_subtitle_douyin"))
+            elif is_tiktok:
+                self.empty_subtitle.setText(tr("empty_subtitle_tiktok"))
+            else:
+                self.empty_subtitle.setText(tr("empty_subtitle"))
+
+    def set_subtitle_column_visible(self, visible: bool) -> None:
+        """
+        Shows or hides the Subtitle column.
+        When hidden (e.g. TikTok), Video Title automatically stretches across the reclaimed horizontal space.
+        When shown (e.g. YouTube), Subtitle column is restored with fixed 150px width.
+        """
+        self.table.setColumnHidden(self.COL_SUBTITLE, not visible)
+        header = self.table.horizontalHeader()
+        if visible:
+            header.setSectionResizeMode(self.COL_SUBTITLE, QHeaderView.ResizeMode.Fixed)
+            self.table.setColumnWidth(self.COL_SUBTITLE, 150)
+        # Ensure Title column always stretches to fill all available horizontal space
+        header.setSectionResizeMode(self.COL_TITLE, QHeaderView.ResizeMode.Stretch)
 
     def load_videos(self, videos: List[VideoItem]) -> None:
         """Populates the table with scanned VideoItem objects."""
@@ -430,8 +461,10 @@ class VideoTableWidget(QWidget):
             if is_failed:
                 self._open_error_details_for_video(vid_match)
                 return
+            url = vid_match.url or f"https://www.youtube.com/watch?v={video_id}"
+        else:
+            url = f"https://www.youtube.com/watch?v={video_id}"
 
-        url = f"https://www.youtube.com/watch?v={video_id}"
         QGuiApplication.clipboard().setText(url)
 
     def _open_error_details_for_video(self, video: VideoItem) -> None:
@@ -445,6 +478,7 @@ class VideoTableWidget(QWidget):
                 raw_error=video.error_reason or tr("download_failed_fallback"),
                 video_id=video.video_id,
                 video_title=video.title,
+                platform=getattr(video, "platform", "youtube"),
             )
         dialog = ErrorDetailsDialog(error=err, parent=self.window())
         dialog.exec()
@@ -459,6 +493,7 @@ class VideoTableWidget(QWidget):
                 raw_error=video.error_reason or tr("download_failed_fallback"),
                 video_id=video.video_id,
                 video_title=video.title,
+                platform=getattr(video, "platform", "youtube"),
             )
         runtime_info = {}
         try:
@@ -500,7 +535,8 @@ class VideoTableWidget(QWidget):
         id_item = self.table.item(row, self.COL_VIDEO_ID)
         video_title = title_item.text() if title_item else ""
         video_id = id_item.text() if id_item else ""
-        video_url = f"https://www.youtube.com/watch?v={video_id}" if video_id else ""
+        vid_match = next((v for v in self._videos if v.video_id == video_id), None)
+        video_url = vid_match.url if (vid_match and vid_match.url) else (f"https://www.youtube.com/watch?v={video_id}" if video_id else "")
 
         menu = QMenu(self)
 
@@ -522,7 +558,6 @@ class VideoTableWidget(QWidget):
         open_browser_act.triggered.connect(lambda: QDesktopServices.openUrl(QUrl(video_url)))
         menu.addAction(open_browser_act)
 
-        vid_match = next((v for v in self._videos if v.video_id == video_id), None)
         if vid_match:
             is_failed = (
                 vid_match.error_details is not None
@@ -603,7 +638,13 @@ class VideoTableWidget(QWidget):
 
         # Empty state
         self.empty_title.setText(tr("empty_title"))
-        self.empty_subtitle.setText(tr("empty_subtitle"))
+        curr_plat = getattr(self, "_current_platform", "youtube")
+        if curr_plat == "douyin":
+            self.empty_subtitle.setText(tr("empty_subtitle_douyin"))
+        elif curr_plat == "tiktok":
+            self.empty_subtitle.setText(tr("empty_subtitle_tiktok"))
+        else:
+            self.empty_subtitle.setText(tr("empty_subtitle"))
 
         # Counts
         self._update_counts()
@@ -625,7 +666,9 @@ class VideoTableWidget(QWidget):
     @staticmethod
     def _apply_status_styling(item: QTableWidgetItem, status: str) -> None:
         """Applies clean semantic colors to different status states."""
-        font = QFont()
+        font = item.font()
+        if font.pointSize() <= 0:
+            font.setPointSize(9)
         st_lower = (status or "").lower()
         if status == VideoStatus.DOWNLOADING or "downloading" in st_lower or "下载中" in status:
             item.setForeground(QColor("#0284c7"))  # Sky blue
@@ -662,7 +705,9 @@ class VideoTableWidget(QWidget):
     @staticmethod
     def _apply_subtitle_styling(item: QTableWidgetItem, status: str) -> None:
         """Applies clean semantic colors to subtitle status states."""
-        font = QFont()
+        font = item.font()
+        if font.pointSize() <= 0:
+            font.setPointSize(9)
         st = status.lower() if status else ""
         if "complete" in st or "downloaded" in st or "saved" in st or "official" in st or "✓" in st:
             item.setForeground(QColor("#16a34a"))  # Green

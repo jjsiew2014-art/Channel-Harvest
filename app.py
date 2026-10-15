@@ -11,13 +11,21 @@ Requirements:
 
 import sys
 from PySide6.QtWidgets import QApplication
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, qInstallMessageHandler, QtMsgType
 from PySide6.QtGui import QIcon
 
 from core.paths import get_logo_file, get_app_icon_file, setup_runtime_environment
 from core.settings import SettingsManager
 from gui.main_window import MainWindow
 from gui.styles import ThemeManager
+
+
+def _qt_message_handler(mode: QtMsgType, context, message: str) -> None:
+    """Filters benign Qt internal warnings (e.g. stylesheet font pointSize resolution)."""
+    if "Point size <= 0" in message or "setPointSize" in message:
+        return
+    if mode in (QtMsgType.QtWarningMsg, QtMsgType.QtCriticalMsg, QtMsgType.QtFatalMsg):
+        sys.stderr.write(f"{message}\n")
 
 
 def main() -> None:
@@ -31,6 +39,9 @@ def main() -> None:
     """
     # Initialize runtime paths and environment
     setup_runtime_environment()
+
+    # Install Qt message filter to suppress benign C++ stylesheet font warnings
+    qInstallMessageHandler(_qt_message_handler)
 
     # Configure Windows taskbar grouping and icon display
     try:

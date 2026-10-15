@@ -27,7 +27,7 @@ from yt_dlp.utils import DownloadError, ExtractorError, UnsupportedError, Youtub
 from PySide6.QtCore import QThread, Signal, QObject
 
 from core.models import VideoItem, DownloadSettings, VideoStatus, DownloadMode
-from core.paths import get_deno_executable
+from core.paths import get_deno_executable, sanitize_filename, resolve_video_outtmpl, get_temp_dir
 from downloader.format_selector import FormatSelector
 
 
@@ -94,14 +94,18 @@ def parse_locked_rename_paths(error_msg: str) -> Optional[Tuple[Path, Path]]:
     return None
 
 
-def is_final_output_file(dst_path: Path, video_id: str = "") -> bool:
+def is_final_output_file(dst_path: Path, video_id: str = "", title: str = "") -> bool:
     """
     Determines if a destination path represents the final merged/output media file
     or an intermediate format stream (e.g. .f137.mp4, .f140.m4a, .temp.mp4).
     """
     name = dst_path.name
-    if video_id and f"[{video_id}]" not in name and video_id not in name:
-        return False
+    if video_id:
+        has_id = (f"[{video_id}]" in name) or (video_id in name)
+        clean_title = sanitize_filename(title) if title else ""
+        has_title = bool(clean_title and name.startswith(clean_title))
+        if not (has_id or has_title):
+            return False
     if name.endswith(".part") or name.endswith(".ytdl") or ".temp." in name:
         return False
     if re.search(r"\.f\d+\.[a-zA-Z0-9]+$", name):
@@ -123,7 +127,7 @@ def is_http_416_error(error_msg: str) -> bool:
     )
 
 
-def find_video_partial_files(target_dir: Path, video_id: str) -> List[Path]:
+def find_video_partial_files(target_dir: Path, video_id: str, title: str = "") -> List[Path]:
     """
     Identifies all partial (.part) or download state (.ytdl) files in target_dir
     that belong strictly to video_id.
@@ -134,6 +138,7 @@ def find_video_partial_files(target_dir: Path, video_id: str) -> List[Path]:
 
     partial_files = []
     id_bracket = f"[{video_id}]"
+    clean_title = sanitize_filename(title) if title else ""
 
     try:
         for entry in target_dir.iterdir():
@@ -141,8 +146,10 @@ def find_video_partial_files(target_dir: Path, video_id: str) -> List[Path]:
                 continue
             name = entry.name
             if name.endswith(".part") or name.endswith(".ytdl"):
-                # Strict ownership check: must match video ID
+                # Strict ownership check: must match video ID or video title
                 if id_bracket in name or video_id in name:
+                    partial_files.append(entry)
+                elif clean_title and name.startswith(clean_title):
                     partial_files.append(entry)
     except Exception:
         pass
@@ -150,7 +157,7 @@ def find_video_partial_files(target_dir: Path, video_id: str) -> List[Path]:
     return partial_files
 
 
-def find_completed_final_file(target_dir: Path, video_id: str) -> Optional[Path]:
+def find_completed_final_file(target_dir: Path, video_id: str, title: str = "") -> Optional[Path]:
     """
     Checks if a valid, complete final output media file already exists for video_id.
     """
@@ -159,7 +166,7 @@ def find_completed_final_file(target_dir: Path, video_id: str) -> Optional[Path]
 
     try:
         for entry in target_dir.iterdir():
-            if entry.is_file() and is_final_output_file(entry, video_id):
+            if entry.is_file() and is_final_output_file(entry, video_id, title=title):
                 if entry.stat().st_size > 0:
                     return entry
     except Exception:
@@ -337,64 +344,78 @@ class YtDlpEngine:
         browser_cookies: Optional[str] = None,
         quiet: bool = True,
         no_warnings: bool = True,
+        platform: str = "youtube",
+        auth_config: Optional[Any] = None,
+        settings: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         Builds standard yt-dlp option dictionary configured with:
-        1. Bundled Deno JavaScript runtime via js_runtimes for solving YouTube challenges.
-        2. Optional browser cookie extraction when configured by the user.
+        1. Bundled Deno JavaScript runtime via js_runtimes for YouTube challenges (if YouTube).
+        2. Platform-scoped authentication resolved via active platform adapter.
         3. Application logger routing to GUI activity log.
+        4. Safe writable per-user temporary directory.
         """
         opts: Dict[str, Any] = {
             "quiet": quiet,
             "no_warnings": no_warnings,
+            "paths": {
+                "temp": str(get_temp_dir()),
+            },
         }
         if log_callback:
             opts["logger"] = YtDlpLogger(log_callback)
 
-        # 1. Attach Deno runtime if available
-        deno_exe = get_deno_executable()
-        if deno_exe and deno_exe.is_file():
-            opts["js_runtimes"] = {
-                "deno": {"path": str(deno_exe.resolve())}
-            }
-        # Enable official remote components fallback for challenge solver
-        opts["remote_components"] = ["ejs:github"]
+        platform_str = str(platform).lower().strip() if platform else "youtube"
+        is_youtube = platform_str == "youtube"
 
-        # 2. Attach browser cookies or cookie file if explicitly configured
-        cookie_browser = browser_cookies
-        auth_method = None
-        browser_profile = None
-        try:
-            from core.settings import SettingsManager
-            sm = SettingsManager()
-            auth_method = sm.get("auth_method", None)
-            browser_profile = sm.get("browser_profile", "Default")
-            if not cookie_browser:
-                cookie_browser = sm.get("browser_cookies", "none")
-        except Exception:
-            if not cookie_browser:
-                cookie_browser = "none"
+        # 1. Attach Deno runtime and EJS solver only for YouTube
+        if is_youtube:
+            deno_exe = get_deno_executable()
+            if deno_exe and deno_exe.is_file():
+                opts["js_runtimes"] = {
+                    "deno": {"path": str(deno_exe.resolve())}
+                }
+            # Enable official remote components fallback for challenge solver
+            opts["remote_components"] = ["ejs:github"]
 
-        # If auth_method is explicitly "none", never attach cookies
-        if auth_method == "none" and (not browser_cookies or browser_cookies == "none"):
-            return opts
+        # 2. Resolve platform-scoped authentication
+        resolved_auth = auth_config
+        platform_name = platform_str.capitalize()
 
-        if cookie_browser and str(cookie_browser).lower().strip() not in ("none", "", "null", "false"):
-            raw_target = str(cookie_browser).strip()
-            if raw_target.lower() == "custom_file" or auth_method == "custom_file":
+        if resolved_auth is None:
+            try:
+                from core.platform import PlatformRegistry
+                adapter = PlatformRegistry.get_adapter(platform_str)
+                if adapter:
+                    platform_name = adapter.display_name
+                    if settings is not None:
+                        resolved_auth = adapter.get_auth_config(settings=settings)
+                    elif is_youtube and (adapter.capabilities.supports_browser_cookies or adapter.capabilities.supports_cookie_file):
+                        resolved_auth = adapter.get_auth_config(settings={"browser_cookies": browser_cookies} if browser_cookies else None)
+                    else:
+                        resolved_auth = adapter.get_auth_config()
+            except Exception:
+                pass
+
+        if resolved_auth is None:
+            if is_youtube:
                 try:
-                    from core.settings import SettingsManager
-                    cookie_path_str = SettingsManager().get("custom_cookie_file", "")
-                    if cookie_path_str and Path(cookie_path_str).is_file():
-                        opts["cookiefile"] = str(Path(cookie_path_str).resolve())
+                    from core.platform.youtube import YouTubeAdapter
+                    resolved_auth = YouTubeAdapter().get_auth_config(settings={"browser_cookies": browser_cookies} if browser_cookies else None)
                 except Exception:
-                    pass
-            elif Path(raw_target).is_file():
-                opts["cookiefile"] = str(Path(raw_target).resolve())
+                    from core.platform.auth import PlatformAuthConfig
+                    resolved_auth = PlatformAuthConfig.none()
             else:
-                browser_clean = raw_target.lower()
-                prof = browser_profile if browser_profile and browser_profile.lower() != "default" else None
-                opts["cookiesfrombrowser"] = (browser_clean, prof, None, None)
+                from core.platform.auth import PlatformAuthConfig
+                resolved_auth = PlatformAuthConfig.none()
+
+        # Log platform authentication state without leaking credentials or paths
+        if log_callback and resolved_auth:
+            log_callback(f"[AUTH] Platform: {platform_name} | Authentication: {resolved_auth.description}")
+
+        # Apply authentication parameters to yt-dlp options (if active and supported)
+        if resolved_auth and resolved_auth.is_active:
+            resolved_auth.apply_to_ydl_opts(opts)
 
         return opts
 
@@ -403,6 +424,8 @@ class YtDlpEngine:
         url: str,
         log_callback: Optional[Callable[[str], None]] = None,
         browser_cookies: Optional[str] = None,
+        custom_cookie_file: Optional[str] = None,
+        auth_config: Optional[Any] = None,
     ) -> List[VideoItem]:
         """
         Extracts video entries from a channel or playlist URL using yt-dlp.
@@ -421,7 +444,12 @@ class YtDlpEngine:
             browser_cookies=browser_cookies,
             quiet=True,
             no_warnings=True,
+            platform="youtube",
+            auth_config=auth_config,
         )
+        if auth_config is None and custom_cookie_file and Path(custom_cookie_file).is_file():
+            ydl_opts["cookiefile"] = str(Path(custom_cookie_file).resolve())
+
         ydl_opts.update({
             "extract_flat": "in_playlist",
             "skip_download": True,
@@ -715,12 +743,12 @@ class YtDlpEngine:
             log_callback("[Download] Partial resume state appears invalid")
 
         # 1. Check whether a valid completed final file already exists
-        completed_file = find_completed_final_file(target_dir, video.video_id)
+        completed_file = find_completed_final_file(target_dir, video.video_id, title=video.title)
         if completed_file:
             if log_callback:
                 log_callback(f"[Download] Valid completed final file already exists: {completed_file.name}. Preserving file.")
             # Clean up any leftover stale .part files
-            for p in find_video_partial_files(target_dir, video.video_id):
+            for p in find_video_partial_files(target_dir, video.video_id, title=video.title):
                 try:
                     p.unlink(missing_ok=True)
                 except Exception:
@@ -737,7 +765,7 @@ class YtDlpEngine:
             raise DownloadCancelledException("Download cancelled by user.")
 
         # 3. Locate partial files belonging strictly to this video
-        part_files = find_video_partial_files(target_dir, video.video_id)
+        part_files = find_video_partial_files(target_dir, video.video_id, title=video.title)
 
         # 4. Record sanitized diagnostic information
         part_exists_str = "yes" if part_files else "no"
@@ -800,11 +828,12 @@ class YtDlpEngine:
             raise DownloadCancelledException("Download cancelled by user.")
 
         # 1. Check download archive if skip_existing is enabled
+        platform_prefix = getattr(video, "platform", "youtube").lower()
         if settings.skip_existing and archive_file and archive_file.exists():
             try:
                 with open(archive_file, "r", encoding="utf-8") as f:
                     archive_content = f.read()
-                    if f"youtube {video.video_id}" in archive_content or video.video_id in archive_content:
+                    if f"{platform_prefix} {video.video_id}" in archive_content or f"youtube {video.video_id}" in archive_content or video.video_id in archive_content:
                         if log_callback:
                             log_callback(f"[ARCHIVE] Video {video.video_id} already in archive. Skipping download.")
                         return {"success": True, "skipped": True}
@@ -812,13 +841,18 @@ class YtDlpEngine:
                 if log_callback:
                     log_callback(f"[WARNING] Could not read download archive: {e}")
 
-        video_url = video.url if video.url else f"https://www.youtube.com/watch?v={video.video_id}"
+        if video.url:
+            video_url = video.url
+        elif platform_prefix == "tiktok":
+            video_url = f"https://www.tiktok.com/@tiktok/video/{video.video_id}"
+        else:
+            video_url = f"https://www.youtube.com/watch?v={video.video_id}"
         mode = settings.download_mode or DownloadMode.VIDEO_AND_AUDIO
 
         # 2. Mode: Video Only (complete video with audio merged)
         if mode == DownloadMode.VIDEO_ONLY:
             format_spec, merge_ext = FormatSelector.build_video_format_spec(settings)
-            outtmpl_pattern = str(target_dir / "%(title)s [%(id)s].%(ext)s")
+            outtmpl_pattern = resolve_video_outtmpl(target_dir, include_video_id=settings.include_video_id_in_filename)
             hook = self._create_progress_hook(
                 progress_callback=progress_callback,
                 cancel_check=cancel_check,
@@ -830,7 +864,13 @@ class YtDlpEngine:
             ydl_opts: Dict[str, Any] = self.build_base_ydl_opts(
                 log_callback=log_callback,
                 browser_cookies=settings.browser_cookies,
+                platform=platform_prefix,
+                settings=settings,
             )
+            ydl_opts["paths"] = {
+                "home": str(target_dir),
+                "temp": str(get_temp_dir()),
+            }
             ydl_opts.update({
                 "format": format_spec,
                 "outtmpl": outtmpl_pattern,
@@ -875,14 +915,14 @@ class YtDlpEngine:
                             cancel_check=cancel_check,
                         )
                         if rename_ok:
-                            if is_final_output_file(dst_path, video.video_id):
+                            if is_final_output_file(dst_path, video.video_id, title=video.title):
                                 if log_callback:
                                     log_callback(f"[SUCCESS] Download completed and finalized: {dst_path.name}")
                                 if settings.skip_existing and archive_file:
                                     try:
                                         archive_file.parent.mkdir(parents=True, exist_ok=True)
                                         with open(archive_file, "a", encoding="utf-8") as f:
-                                            f.write(f"youtube {video.video_id}\n")
+                                            f.write(f"{platform_prefix} {video.video_id}\n")
                                     except Exception:
                                         pass
                                 return {"success": True, "skipped": False, "info_dict": None}
@@ -924,7 +964,7 @@ class YtDlpEngine:
         # 3. Mode: Audio Only (standalone audio track)
         elif mode == DownloadMode.AUDIO_ONLY:
             format_spec, audio_ext, postprocessors = FormatSelector.build_audio_format_spec(settings)
-            outtmpl_pattern = str(target_dir / "%(title)s [%(id)s].%(ext)s")
+            outtmpl_pattern = resolve_video_outtmpl(target_dir, include_video_id=settings.include_video_id_in_filename)
             hook = self._create_progress_hook(
                 progress_callback=progress_callback,
                 cancel_check=cancel_check,
@@ -936,7 +976,13 @@ class YtDlpEngine:
             ydl_opts = self.build_base_ydl_opts(
                 log_callback=log_callback,
                 browser_cookies=settings.browser_cookies,
+                platform=platform_prefix,
+                settings=settings,
             )
+            ydl_opts["paths"] = {
+                "home": str(target_dir),
+                "temp": str(get_temp_dir()),
+            }
             ydl_opts.update({
                 "format": format_spec,
                 "outtmpl": outtmpl_pattern,
@@ -982,14 +1028,14 @@ class YtDlpEngine:
                             cancel_check=cancel_check,
                         )
                         if rename_ok:
-                            if is_final_output_file(dst_path, video.video_id):
+                            if is_final_output_file(dst_path, video.video_id, title=video.title):
                                 if log_callback:
                                     log_callback(f"[SUCCESS] Audio download completed and finalized: {dst_path.name}")
                                 if settings.skip_existing and archive_file:
                                     try:
                                         archive_file.parent.mkdir(parents=True, exist_ok=True)
                                         with open(archive_file, "a", encoding="utf-8") as f:
-                                            f.write(f"youtube {video.video_id}\n")
+                                            f.write(f"{platform_prefix} {video.video_id}\n")
                                     except Exception:
                                         pass
                                 return {"success": True, "skipped": False, "info_dict": None}
@@ -1035,11 +1081,11 @@ class YtDlpEngine:
 
             # Prevent file overwrite collision if video and audio share the same extension
             if merge_ext.lower() == audio_ext.lower():
-                v_outtmpl = str(target_dir / "%(title)s [%(id)s]_video.%(ext)s")
-                a_outtmpl = str(target_dir / "%(title)s [%(id)s]_audio.%(ext)s")
+                v_outtmpl = resolve_video_outtmpl(target_dir, include_video_id=settings.include_video_id_in_filename, suffix="_video")
+                a_outtmpl = resolve_video_outtmpl(target_dir, include_video_id=settings.include_video_id_in_filename, suffix="_audio")
             else:
-                v_outtmpl = str(target_dir / "%(title)s [%(id)s].%(ext)s")
-                a_outtmpl = str(target_dir / "%(title)s [%(id)s].%(ext)s")
+                v_outtmpl = resolve_video_outtmpl(target_dir, include_video_id=settings.include_video_id_in_filename)
+                a_outtmpl = resolve_video_outtmpl(target_dir, include_video_id=settings.include_video_id_in_filename)
 
             # Step 1: Video download
             v_hook = self._create_progress_hook(
@@ -1052,7 +1098,13 @@ class YtDlpEngine:
             v_opts = self.build_base_ydl_opts(
                 log_callback=log_callback,
                 browser_cookies=settings.browser_cookies,
+                platform=platform_prefix,
+                settings=settings,
             )
+            v_opts["paths"] = {
+                "home": str(target_dir),
+                "temp": str(get_temp_dir()),
+            }
             v_opts.update({
                 "format": v_format_spec,
                 "outtmpl": v_outtmpl,
@@ -1096,7 +1148,7 @@ class YtDlpEngine:
                             cancel_check=cancel_check,
                         )
                         if rename_ok:
-                            if is_final_output_file(dst_path, video.video_id):
+                            if is_final_output_file(dst_path, video.video_id, title=video.title):
                                 break
                             continue
 
@@ -1148,7 +1200,13 @@ class YtDlpEngine:
             a_opts = self.build_base_ydl_opts(
                 log_callback=log_callback,
                 browser_cookies=settings.browser_cookies,
+                platform=platform_prefix,
+                settings=settings,
             )
+            a_opts["paths"] = {
+                "home": str(target_dir),
+                "temp": str(get_temp_dir()),
+            }
             a_opts.update({
                 "format": a_format_spec,
                 "outtmpl": a_outtmpl,
@@ -1187,7 +1245,7 @@ class YtDlpEngine:
                             cancel_check=cancel_check,
                         )
                         if rename_ok:
-                            if is_final_output_file(dst_path, video.video_id):
+                            if is_final_output_file(dst_path, video.video_id, title=video.title):
                                 break
                             continue
 
@@ -1229,7 +1287,7 @@ class YtDlpEngine:
                 try:
                     archive_file.parent.mkdir(parents=True, exist_ok=True)
                     with open(archive_file, "a", encoding="utf-8") as f:
-                        f.write(f"youtube {video.video_id}\n")
+                        f.write(f"{platform_prefix} {video.video_id}\n")
                 except Exception as e:
                     if log_callback:
                         log_callback(f"[WARNING] Could not append to archive: {e}")
@@ -1254,23 +1312,58 @@ class ChannelScanWorker(QThread):
     scan_error = Signal(str)
     scan_finished = Signal()
 
-    def __init__(self, url: str, browser_cookies: Optional[str] = None, parent: Optional[QObject] = None):
+    def __init__(
+        self,
+        url: str,
+        browser_cookies: Optional[str] = None,
+        custom_cookie_file: Optional[str] = None,
+        auth_config: Optional[Any] = None,
+        platform_id: Optional[str] = None,
+        parent: Optional[QObject] = None,
+    ):
         super().__init__(parent)
         self.url = url
         self.browser_cookies = browser_cookies
+        self.custom_cookie_file = custom_cookie_file
+        self.auth_config = auth_config
+        self.platform_id = platform_id
         self.engine = YtDlpEngine()
 
     def run(self) -> None:
-        """Runs yt-dlp extraction off the main thread."""
+        """Runs extraction off the main thread using platform adapter."""
         self.scan_started.emit()
         self.log_message.emit(f"[INFO] Starting background scan for: {self.url}")
 
         try:
-            videos = self.engine.extract_channel_entries(
-                url=self.url,
-                log_callback=self.log_message.emit,
-                browser_cookies=self.browser_cookies,
-            )
+            from core.platform import PlatformRegistry
+            adapter = PlatformRegistry.get_adapter_for_url(self.url)
+            if not adapter and self.platform_id:
+                adapter = PlatformRegistry.get_adapter(self.platform_id)
+
+            if adapter and not PlatformRegistry.is_available(adapter.platform_id):
+                from core.error_classifier import ErrorClassifier
+                err = ErrorClassifier.for_unavailable_platform(adapter.platform_id)
+                self.log_message.emit(f"[BLOCKED] {err.title}: {err.user_message}")
+                self.scan_error.emit(f"[PLATFORM_TEMPORARILY_UNAVAILABLE] {err.user_message}")
+                return
+
+            if adapter:
+                cookies_to_pass = self.browser_cookies if (adapter.capabilities.supports_browser_cookies or adapter.capabilities.supports_cookie_file) else None
+                videos = adapter.extract_entries(
+                    url=self.url,
+                    log_callback=self.log_message.emit,
+                    browser_cookies=cookies_to_pass,
+                    custom_cookie_file=self.custom_cookie_file,
+                    auth_config=self.auth_config,
+                )
+            else:
+                videos = self.engine.extract_channel_entries(
+                    url=self.url,
+                    log_callback=self.log_message.emit,
+                    browser_cookies=self.browser_cookies,
+                    custom_cookie_file=self.custom_cookie_file,
+                    auth_config=self.auth_config,
+                )
             self.scan_completed.emit(videos)
 
         except InvalidURLError as e:
@@ -1280,12 +1373,12 @@ class ChannelScanWorker(QThread):
         except NetworkError as e:
             self.log_message.emit(f"[ERROR] Network failure: {str(e)}")
             self.scan_error.emit(
-                "Network Error:\nCould not reach YouTube. Please check your internet connection."
+                f"Network Error:\nCould not connect to service. Please check your internet connection.\n{str(e)}"
             )
 
         except EmptyChannelError as e:
             self.log_message.emit(f"[WARNING] {str(e)}")
-            self.scan_error.emit(f"Empty Channel:\n{str(e)}")
+            self.scan_error.emit(f"Empty Channel / User:\n{str(e)}")
 
         except ExtractionError as e:
             self.log_message.emit(f"[ERROR] Extraction failed: {str(e)}")

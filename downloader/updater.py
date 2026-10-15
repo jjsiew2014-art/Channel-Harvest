@@ -10,6 +10,7 @@ Features:
 - Dedicated logging to %APPDATA%/ChannelHarvest/logs/updater.log.
 """
 
+import os
 import re
 import sys
 import json
@@ -17,7 +18,7 @@ import logging
 import subprocess
 import importlib
 import urllib.request
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Dict, Any
 from pathlib import Path
 
 import yt_dlp
@@ -65,6 +66,214 @@ def parse_version(ver_str: str) -> Tuple[int, ...]:
     """Parses a version string into a comparable tuple of integers."""
     numbers = re.findall(r"\d+", ver_str or "")
     return tuple(int(n) for n in numbers) if numbers else (0,)
+
+
+_ytdlp_validation_cache: Dict[Tuple[str, int, int], Tuple[bool, str, Dict[str, Any]]] = {}
+
+
+def invalidate_ytdlp_validation_cache() -> None:
+    """Clears the standalone yt-dlp binary validation cache."""
+    global _ytdlp_validation_cache
+    _ytdlp_validation_cache.clear()
+
+
+def validate_standalone_ytdlp(candidate_path: Path, force_refresh: bool = False) -> Tuple[bool, str, Dict[str, Any]]:
+    """
+    Validates that candidate_path is an official standalone Windows x64 yt-dlp executable.
+
+    Enforces strict security and packaging requirements:
+    1. File must exist and size must be >= 5 MB (rejects ~100 KB script wrappers).
+    2. Must be a valid Windows PE binary (MZ header, PE signature).
+    3. Architecture must be x86_64 / AMD64 (PE machine type 0x8664).
+    4. Must NOT be a pip/distlib wrapper (rejects simple_launcher, t64.pdb, t64.exe).
+    5. Must NOT contain developer-local Python shebang or pythoncore path strings.
+    6. Must successfully execute and return a valid version.
+    7. Must successfully execute --verbose --list-impersonate-targets:
+       - Distribution tag must not be (pip)
+       - curl_cffi must be present in optional libraries / request handlers
+       - Available impersonation targets must be present
+
+    Caches validation results by (path, size, mtime) to ensure instantaneous subsequent checks.
+    """
+    info: Dict[str, Any] = {
+        "path": str(candidate_path),
+        "size": 0,
+        "machine": "unknown",
+        "version": "",
+        "build_type": "unknown",
+        "curl_cffi": "Unavailable",
+        "curl_cffi_version": "",
+        "impersonation": "Unavailable",
+        "impersonation_state": "IMPERSONATION_UNAVAILABLE",
+        "available_targets": [],
+        "default_target": "",
+    }
+
+    if not candidate_path.is_file():
+        return False, f"File does not exist: {candidate_path}", info
+
+    try:
+        st = candidate_path.stat()
+        size = st.st_size
+        mtime_ns = getattr(st, "st_mtime_ns", int(st.st_mtime * 1e9))
+    except Exception as e:
+        return False, f"Failed to access file stats: {e}", info
+
+    info["size"] = size
+    cache_key = (str(candidate_path.resolve()), size, mtime_ns)
+
+    if not force_refresh and cache_key in _ytdlp_validation_cache:
+        c_valid, c_reason, c_info = _ytdlp_validation_cache[cache_key]
+        return c_valid, c_reason, dict(c_info)
+
+    MIN_STANDALONE_SIZE = 5 * 1024 * 1024  # 5 MB minimum
+    if size < MIN_STANDALONE_SIZE:
+        info["build_type"] = "INVALID — Python-dependent launcher"
+        return False, f"File size too small for standalone build: {size:,} bytes (expected >= 5 MB). Appears to be a script wrapper.", info
+
+    # 2. Windows PE header check
+    try:
+        with open(candidate_path, "rb") as f:
+            header = f.read(1024)
+            if header[:2] != b"MZ":
+                return False, "Not a valid Windows executable (missing MZ signature)", info
+
+            pe_offset = int.from_bytes(header[0x3C:0x40], "little")
+            f.seek(pe_offset)
+            pe_sig = f.read(4)
+            if pe_sig != b"PE\x00\x00":
+                return False, "Invalid PE header signature", info
+
+            machine = int.from_bytes(f.read(2), "little")
+            if machine == 0x8664:
+                info["machine"] = "x86_64"
+            elif machine == 0x014C:
+                info["machine"] = "x86_32"
+                return False, "Executable architecture is 32-bit (x86). 64-bit AMD64 (0x8664) required.", info
+            elif machine == 0xAA64:
+                info["machine"] = "ARM64"
+                return False, "Executable architecture is ARM64. x86_64 required for standard release.", info
+            else:
+                info["machine"] = f"0x{machine:04x}"
+                return False, f"Unexpected machine architecture: 0x{machine:04x}. Expected x86_64 (0x8664).", info
+
+            # 3. Content inspection for pip/distlib wrapper signatures
+            f.seek(0)
+            sample = f.read(2 * 1024 * 1024)
+            f.seek(max(0, size - 262144))
+            sample += f.read()
+
+            suspicious_markers = [
+                (b"simple_launcher", "pip/distlib simple_launcher wrapper detected"),
+                (b"t64.pdb", "pip/distlib t64.pdb launcher marker detected"),
+                (b"t64.exe", "pip/distlib t64.exe launcher marker detected"),
+                (b"pythoncore", "Hardcoded pythoncore developer Python path detected"),
+            ]
+            for marker, reason in suspicious_markers:
+                if marker in sample:
+                    info["build_type"] = "INVALID — Python-dependent launcher"
+                    return False, f"Invalid build type: {reason}", info
+
+            if re.search(rb"#!.*python", sample, re.IGNORECASE):
+                info["build_type"] = "INVALID — Python-dependent launcher"
+                return False, "Invalid build type: Shebang pointing to Python interpreter found", info
+
+    except Exception as e:
+        return False, f"Failed to parse PE binary headers: {e}", info
+
+    # 4. Diagnostic execution check (extracts version, distribution tag, curl_cffi, and targets)
+    startupinfo = None
+    creation_flags = 0
+    if sys.platform == "win32":
+        creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = 0
+
+    try:
+        diag_proc = subprocess.run(
+            [str(candidate_path), "--verbose", "--list-impersonate-targets"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            creationflags=creation_flags,
+            startupinfo=startupinfo,
+        )
+        if diag_proc.returncode != 0:
+            return False, f"--verbose execution failed (code {diag_proc.returncode}): {diag_proc.stderr.strip()}", info
+
+        combined_output = f"{diag_proc.stdout}\n{diag_proc.stderr}"
+
+        # Extract version directly from diagnostic output (avoids redundant second process spawn)
+        m_ver = re.search(r"yt-dlp version (?:stable@)?([0-9\.]+)", combined_output)
+        if m_ver:
+            info["version"] = m_ver.group(1)
+        else:
+            ver_proc = subprocess.run(
+                [str(candidate_path), "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+                creationflags=creation_flags,
+                startupinfo=startupinfo,
+            )
+            if ver_proc.returncode == 0 and ver_proc.stdout.strip():
+                info["version"] = ver_proc.stdout.strip().splitlines()[0]
+            else:
+                return False, f"--version execution failed (code {ver_proc.returncode}): {ver_proc.stderr.strip()}", info
+
+        # Distribution check
+        if "(pip)" in combined_output:
+            info["build_type"] = "INVALID — Python-dependent launcher"
+            return False, "Executable is a pip distribution, not a standalone binary", info
+
+        if "(win_exe)" in combined_output or "(pyinstaller)" in combined_output or "standalone" in combined_output.lower():
+            info["build_type"] = "Windows x64 Standalone"
+        else:
+            info["build_type"] = "Windows Standalone"
+
+        # curl_cffi check
+        m_curl_ver = re.search(r"curl_cffi-([0-9a-zA-Z\.]+)", combined_output, re.IGNORECASE)
+        curl_ver_str = m_curl_ver.group(1) if m_curl_ver else ""
+        info["curl_cffi_version"] = curl_ver_str
+
+        has_curl_cffi_lib = bool(re.search(r"curl_cffi(?:-[0-9a-zA-Z\.]+)?", combined_output, re.IGNORECASE))
+        has_curl_cffi_handler = "curl_cffi" in combined_output.split("Request Handlers:")[-1].splitlines()[0] if "Request Handlers:" in combined_output else False
+
+        if not (has_curl_cffi_lib or has_curl_cffi_handler):
+            info["curl_cffi"] = "Unavailable"
+            info["impersonation_state"] = "IMPERSONATION_UNAVAILABLE"
+            return False, "curl_cffi is missing from optional libraries and request handlers", info
+        info["curl_cffi"] = "Available"
+
+        # Impersonate targets check
+        impersonate_section = diag_proc.stdout
+        available_targets = []
+        for line in impersonate_section.splitlines():
+            if "curl_cffi" in line and "(unavailable)" not in line.lower():
+                parts = line.split()
+                if parts:
+                    target_name = parts[0]
+                    if len(parts) >= 2 and parts[1] != "curl_cffi":
+                        target_name = f"{parts[0]}:{parts[1]}"
+                    available_targets.append(target_name)
+
+        info["available_targets"] = available_targets
+        if not available_targets:
+            info["impersonation"] = "Unavailable"
+            info["impersonation_state"] = "IMPERSONATION_UNAVAILABLE"
+            return False, "All impersonate targets report unavailable", info
+
+        info["default_target"] = "chrome" if any("chrome" in t.lower() for t in available_targets) else (available_targets[0].split(":")[0].lower() if available_targets else "")
+        info["impersonation_state"] = "IMPERSONATION_AVAILABLE"
+        info["impersonation"] = f"Available ({len(available_targets)} targets)"
+
+    except Exception as e:
+        info["impersonation_state"] = "RUNTIME_INCOMPATIBLE"
+        return False, f"Failed to execute diagnostic check: {e}", info
+
+    _ytdlp_validation_cache[cache_key] = (True, "Valid official standalone Windows x64 yt-dlp binary", dict(info))
+    return True, "Valid official standalone Windows x64 yt-dlp binary", info
 
 
 class YtDlpUpdater:
@@ -266,32 +475,20 @@ class YtDlpUpdater:
                 with open(temp_exe, "wb") as f:
                     shutil.copyfileobj(resp, f)
 
-            # Verify the downloaded binary runs and outputs valid version
-            startupinfo = None
-            creation_flags = 0
-            if sys.platform == "win32":
-                creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = 0
-
-            test_proc = subprocess.run(
-                [str(temp_exe), "--version"],
-                capture_output=True,
-                text=True,
-                timeout=10,
-                creationflags=creation_flags,
-                startupinfo=startupinfo,
-            )
-
-            if test_proc.returncode != 0 or not test_proc.stdout.strip():
+            # Comprehensive standalone validation (verifies standalone PE x64, rejects pip launchers, checks curl_cffi & targets)
+            is_valid, v_reason, v_info = validate_standalone_ytdlp(temp_exe)
+            if not is_valid:
                 if temp_exe.exists():
-                    temp_exe.unlink()
-                err_msg = f"Downloaded yt-dlp.exe failed verification: {test_proc.stderr}"
+                    try:
+                        temp_exe.unlink()
+                    except Exception:
+                        pass
+                err_msg = f"Downloaded yt-dlp.exe failed standalone validation: {v_reason}"
                 _log_updater(f"[INSTALL ERROR] {err_msg}")
                 return False, old_ver, err_msg
 
-            new_binary_version = test_proc.stdout.strip().splitlines()[0]
+            new_binary_version = v_info.get("version") or old_ver
+            b_type = v_info.get("build_type", "Windows x64 Standalone")
 
             # Atomically replace executable
             if old_backup.exists():
@@ -306,7 +503,16 @@ class YtDlpUpdater:
                 except Exception:
                     pass
 
-            temp_exe.replace(final_exe)
+            try:
+                temp_exe.replace(final_exe)
+            except Exception as replace_err:
+                # Rollback if replacement failed
+                if old_backup.exists() and not final_exe.exists():
+                    try:
+                        old_backup.rename(final_exe)
+                    except Exception:
+                        pass
+                raise replace_err
 
             if old_backup.exists():
                 try:
@@ -314,7 +520,7 @@ class YtDlpUpdater:
                 except Exception:
                     pass
 
-            _log_updater(f"[INSTALL SUCCESS] yt-dlp.exe updated to {new_binary_version} at {final_exe}")
+            _log_updater(f"[INSTALL SUCCESS] yt-dlp.exe updated to {new_binary_version} ({b_type}) at {final_exe}")
 
             # 2. Also attempt to update the embedded Python package in AppData/packages
             try:

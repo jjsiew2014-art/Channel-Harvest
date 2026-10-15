@@ -24,8 +24,8 @@ from typing import Optional, List
 ANSI_ESCAPE_RE = re.compile(r'\x1b(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
 
 import yt_dlp
-from PySide6.QtCore import Qt, QSize, QByteArray
-from PySide6.QtGui import QFont, QCloseEvent, QIcon, QPixmap, QPainter
+from PySide6.QtCore import Qt, QSize, QByteArray, QTimer
+from PySide6.QtGui import QFont, QCloseEvent, QIcon, QPixmap, QPainter, QBrush, QColor
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QApplication,
@@ -62,6 +62,7 @@ from core.models import (
 from core.settings import SettingsManager
 from core.paths import get_archive_file, get_logo_file
 from core.i18n import I18nManager, tr
+from core.platform import PlatformDetector, PlatformRegistry
 from downloader.ytdlp_engine import ChannelScanWorker, YtDlpEngine
 from downloader.download_manager import DownloadManager
 from downloader.subtitle_manager import SubtitleDetectionWorker
@@ -129,6 +130,7 @@ class MainWindow(QMainWindow):
         self._download_manager: Optional[DownloadManager] = None
         self._sub_detect_worker: Optional[SubtitleDetectionWorker] = None
         self._silent_update_worker = None
+        self._settings_dialog: Optional[SettingsDialog] = None
 
         # Queue progress tracking and Windows taskbar progress manager
         self._queue_total: int = 0
@@ -304,16 +306,40 @@ class MainWindow(QMainWindow):
         return layout
 
     def _create_url_section(self) -> QGroupBox:
-        """Creates the YouTube Link input section."""
+        """Creates the media link input and platform selection section."""
         self.url_group = QGroupBox("YOUTUBE LINK")
         self.url_group.setObjectName("urlGroupBox")
         layout = QVBoxLayout(self.url_group)
         layout.setContentsMargins(14, 6, 14, 6)
         layout.setSpacing(4)
 
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+
         self.url_label = QLabel("YouTube Channel / Playlist URL")
         self.url_label.setStyleSheet("font-weight: 600; font-size: 13px;")
-        layout.addWidget(self.url_label)
+        header_layout.addWidget(self.url_label, stretch=1)
+
+        platform_layout = QHBoxLayout()
+        platform_layout.setSpacing(6)
+
+        self.platform_label = QLabel(tr("platform_label"))
+        self.platform_label.setStyleSheet("font-weight: 600; font-size: 12px; color: #888888;")
+        platform_layout.addWidget(self.platform_label)
+
+        self.platform_combo = QComboBox()
+        self.platform_combo.setObjectName("platformCombo")
+        self.platform_combo.setMinimumHeight(28)
+        self.platform_combo.setMinimumWidth(110)
+        self.platform_combo.addItem(tr("platform_youtube"), "youtube")
+        self.platform_combo.addItem(tr("platform_tiktok"), "tiktok")
+        self.platform_combo.addItem(tr("platform_douyin"), "douyin")
+        self._update_platform_combo_availability()
+        self.platform_combo.currentIndexChanged.connect(self._on_platform_changed)
+        platform_layout.addWidget(self.platform_combo)
+
+        header_layout.addLayout(platform_layout)
+        layout.addLayout(header_layout)
 
         input_layout = QHBoxLayout()
         input_layout.setSpacing(10)
@@ -323,6 +349,7 @@ class MainWindow(QMainWindow):
         self.url_input.setClearButtonEnabled(True)
         self.url_input.setMinimumHeight(34)
         self.url_input.returnPressed.connect(self._on_scan_clicked)
+        self.url_input.textChanged.connect(self._on_url_text_changed)
         input_layout.addWidget(self.url_input, stretch=1)
 
         self.scan_btn = QPushButton("Scan Channel")
@@ -408,7 +435,7 @@ class MainWindow(QMainWindow):
             DownloadMode.VIDEO_AND_AUDIO,
             DownloadMode.VIDEO_ONLY,
             DownloadMode.AUDIO_ONLY,
-            DownloadMode.SUBTITLE_ONLY,
+            DownloadMode.ASSETS_ONLY,
         ]:
             self.mode_combo.addItem(I18nManager.get_mode_label(mode), mode)
         idx_vo = self.mode_combo.findData(DownloadMode.VIDEO_ONLY)
@@ -660,6 +687,12 @@ class MainWindow(QMainWindow):
         self.individual_folder_cb.stateChanged.connect(self._on_setting_changed)
         org_layout.addWidget(self.individual_folder_cb)
 
+        self.include_video_id_cb = QCheckBox("Include Video ID in filename")
+        self.include_video_id_cb.setChecked(False)
+        self.include_video_id_cb.setToolTip("Include YouTube Video ID in downloaded filenames.")
+        self.include_video_id_cb.stateChanged.connect(self._on_setting_changed)
+        org_layout.addWidget(self.include_video_id_cb)
+
         org_layout.addStretch(1)
         columns_layout.addWidget(org_card, stretch=6)
 
@@ -828,6 +861,133 @@ class MainWindow(QMainWindow):
     # Settings & Environment Setup
     # -------------------------------------------------------------------------
 
+    def _update_platform_combo_availability(self) -> None:
+        """
+        Applies enabled/disabled state, styling, and tooltips to platform selector items.
+        Keeps YouTube and TikTok enabled. Greys out and disables Douyin while temporarily frozen.
+        """
+        if not hasattr(self, "platform_combo"):
+            return
+        model = self.platform_combo.model()
+        for i in range(self.platform_combo.count()):
+            plat_id = self.platform_combo.itemData(i)
+            item = model.item(i) if hasattr(model, "item") else None
+            if item is None:
+                continue
+            is_avail = PlatformRegistry.is_available(plat_id)
+            if is_avail:
+                item.setEnabled(True)
+                item.setSelectable(True)
+                item.setToolTip("")
+                item.setData(None, Qt.ItemDataRole.ForegroundRole)
+            else:
+                item.setEnabled(False)
+                item.setSelectable(False)
+                tooltip = tr("platform_douyin_unavailable_tooltip") if plat_id == "douyin" else tr(f"platform_{plat_id}_unavailable_tooltip")
+                item.setToolTip(tooltip)
+                # Subtle greyed-out appearance consistent with current UI and both light/dark themes
+                item.setForeground(QBrush(QColor("#94a3b8")))
+
+    def _on_url_text_changed(self, text: str) -> None:
+        """Auto-detects platform when URL is pasted or typed, seamlessly updating platform selector."""
+        if getattr(self, "_switching_platform", False) or getattr(self, "_loading_settings", False):
+            return
+        cleaned = text.strip()
+        if not cleaned:
+            return
+        detected = PlatformDetector.identify_platform_id(cleaned)
+        if detected in ("youtube", "tiktok", "douyin"):
+            if not PlatformRegistry.is_available(detected):
+                # Do NOT auto-switch to a temporarily frozen platform
+                return
+            current = self.platform_combo.currentData() or "youtube"
+            if detected != current:
+                self._switching_platform = True
+                idx = self.platform_combo.findData(detected)
+                if idx >= 0:
+                    self.platform_combo.setCurrentIndex(idx)
+                self._active_platform = detected
+                self._apply_platform_ui(detected)
+                self.settings_manager.set("selected_platform", detected)
+                self._switching_platform = False
+
+    def _on_platform_changed(self) -> None:
+        """Triggered when platform selector dropdown value is changed by the user."""
+        if getattr(self, "_loading_settings", False) or getattr(self, "_switching_platform", False):
+            return
+        platform_id = self.platform_combo.currentData() or "youtube"
+        if not PlatformRegistry.is_available(platform_id):
+            fallback = getattr(self, "_active_platform", "youtube")
+            if not PlatformRegistry.is_available(fallback):
+                fallback = "youtube"
+            self.log(f"[WARNING] Platform '{platform_id}' is temporarily unavailable.")
+            self.status_bar.showMessage(tr("platform_douyin_unavailable_tooltip"), 4000)
+            self._switching_platform = True
+            idx = self.platform_combo.findData(fallback)
+            if idx >= 0:
+                self.platform_combo.setCurrentIndex(idx)
+            self._switching_platform = False
+            return
+
+        self._active_platform = platform_id
+        self._apply_platform_ui(platform_id)
+        self._on_setting_changed()
+
+    def _apply_platform_ui(self, platform_id: str) -> None:
+        """Updates UI labels, placeholders, and capability constraints based on active platform."""
+        if not PlatformRegistry.is_available(platform_id):
+            platform_id = "youtube"
+        prev_switching = getattr(self, "_switching_platform", False)
+        self._switching_platform = True
+        try:
+            self._active_platform = platform_id
+            is_douyin = (platform_id == "douyin")
+            is_tiktok = (platform_id == "tiktok")
+
+            if is_douyin:
+                if hasattr(self, "url_group"):
+                    self.url_group.setTitle(tr("section_douyin_link"))
+                if hasattr(self, "url_label"):
+                    self.url_label.setText(tr("douyin_url_label"))
+                if hasattr(self, "url_input"):
+                    self.url_input.setPlaceholderText(tr("douyin_url_placeholder"))
+                if hasattr(self, "scan_btn") and getattr(self, "_current_ui_state", "idle") == "idle":
+                    self.scan_btn.setText(tr("scan_douyin"))
+            elif is_tiktok:
+                if hasattr(self, "url_group"):
+                    self.url_group.setTitle(tr("section_tiktok_link"))
+                if hasattr(self, "url_label"):
+                    self.url_label.setText(tr("tiktok_url_label"))
+                if hasattr(self, "url_input"):
+                    self.url_input.setPlaceholderText(tr("tiktok_url_placeholder"))
+                if hasattr(self, "scan_btn") and getattr(self, "_current_ui_state", "idle") == "idle":
+                    self.scan_btn.setText(tr("scan_tiktok"))
+            else:
+                if hasattr(self, "url_group"):
+                    self.url_group.setTitle(tr("section_youtube_link"))
+                if hasattr(self, "url_label"):
+                    self.url_label.setText(tr("channel_url_label"))
+                if hasattr(self, "url_input"):
+                    self.url_input.setPlaceholderText(tr("channel_url_placeholder"))
+                if hasattr(self, "scan_btn") and getattr(self, "_current_ui_state", "idle") == "idle":
+                    self.scan_btn.setText(tr("scan_channel"))
+
+            if hasattr(self, "platform_combo"):
+                idx = self.platform_combo.findData(platform_id)
+                if idx >= 0 and self.platform_combo.currentIndex() != idx:
+                    self.platform_combo.blockSignals(True)
+                    self.platform_combo.setCurrentIndex(idx)
+                    self.platform_combo.blockSignals(False)
+
+            # Update table columns for active platform (hide subtitle column on TikTok, extend Title horizontal space)
+            if hasattr(self, "video_table"):
+                self.video_table.set_platform(platform_id)
+
+            if hasattr(self, "mode_combo"):
+                self._on_mode_changed()
+        finally:
+            self._switching_platform = prev_switching
+
     def _load_saved_settings(self) -> None:
         """Populates UI controls with saved settings from SettingsManager."""
         self.url_input.setText(self.settings_manager.get("last_channel_url", "https://www.youtube.com/@PythonSimplified"))
@@ -840,8 +1000,21 @@ class MainWindow(QMainWindow):
             if idx >= 0:
                 combo.setCurrentIndex(idx)
 
+        # Platform selector
+        saved_platform = self.settings_manager.get("selected_platform", "youtube")
+        if not PlatformRegistry.is_available(saved_platform):
+            saved_platform = "youtube"
+            self.settings_manager.set("selected_platform", "youtube")
+        self._active_platform = saved_platform
+        _set_combo(self.platform_combo, saved_platform)
+        self._apply_platform_ui(saved_platform)
+        self._update_platform_combo_availability()
+
         # Mode
-        _set_combo(self.mode_combo, self.settings_manager.get("download_mode", DownloadMode.VIDEO_ONLY))
+        saved_mode = self.settings_manager.get("download_mode", DownloadMode.VIDEO_ONLY)
+        if saved_mode == "Subtitle Only":
+            saved_mode = DownloadMode.ASSETS_ONLY
+        _set_combo(self.mode_combo, saved_mode)
 
         # Video dropdowns
         _set_combo(self.format_combo, self.settings_manager.get("format", "MOV"))
@@ -872,20 +1045,27 @@ class MainWindow(QMainWindow):
         self.skip_existing_cb.setChecked(self.settings_manager.get("skip_existing", False))
         self.channel_folder_cb.setChecked(self.settings_manager.get("create_channel_folder", True))
         self.individual_folder_cb.setChecked(self.settings_manager.get("create_individual_video_folders", False))
+        self.include_video_id_cb.setChecked(self.settings_manager.get("include_video_id_in_filename", False))
 
-        # Synchronize enabled/disabled states based on restored mode
+        # Synchronize enabled/disabled states based on restored mode and platform capabilities
         self._on_mode_changed()
 
     def _on_mode_changed(self, mode_text: Optional[str] = None) -> None:
-        """Dynamically enables or disables Video/Audio/Subtitle controls based on mode."""
+        """Dynamically enables or disables Video/Audio/Subtitle controls based on mode and platform capabilities."""
         canonical_mode = self.mode_combo.currentData() or self.mode_combo.currentText()
         if mode_text is not None and isinstance(mode_text, str):
-            if mode_text in (DownloadMode.VIDEO_ONLY, DownloadMode.AUDIO_ONLY, DownloadMode.VIDEO_AND_AUDIO, DownloadMode.SUBTITLE_ONLY):
+            if mode_text in (
+                DownloadMode.VIDEO_ONLY,
+                DownloadMode.AUDIO_ONLY,
+                DownloadMode.VIDEO_AND_AUDIO,
+                DownloadMode.ASSETS_ONLY,
+                "Subtitle Only",
+            ):
                 canonical_mode = mode_text
 
         enable_video = canonical_mode in (DownloadMode.VIDEO_ONLY, DownloadMode.VIDEO_AND_AUDIO)
         enable_audio = canonical_mode in (DownloadMode.AUDIO_ONLY, DownloadMode.VIDEO_AND_AUDIO)
-        is_sub_only = canonical_mode == DownloadMode.SUBTITLE_ONLY
+        is_assets_only = canonical_mode in (DownloadMode.ASSETS_ONLY, "Subtitle Only")
 
         # Video controls
         self.video_format_label.setEnabled(enable_video)
@@ -901,22 +1081,52 @@ class MainWindow(QMainWindow):
         self.audio_bitrate_label.setEnabled(enable_audio)
         self.audio_bitrate_combo.setEnabled(enable_audio)
 
-        # Subtitle controls
-        if is_sub_only:
+        # Platform capability gating
+        current_platform = self.platform_combo.currentData() if hasattr(self, "platform_combo") else "youtube"
+        adapter = PlatformRegistry.get_adapter(current_platform)
+        supports_subs = adapter.capabilities.supports_subtitles if adapter else True
+        supports_chapters = adapter.capabilities.supports_chapters if adapter else True
+
+        if not supports_chapters:
+            self.save_chapters_cb.setEnabled(False)
+            if current_platform == "douyin":
+                self.save_chapters_cb.setToolTip(tr("tooltip_douyin_no_chapters"))
+            else:
+                self.save_chapters_cb.setToolTip(tr("tooltip_tiktok_no_chapters"))
+        else:
+            self.save_chapters_cb.setEnabled(True)
+            self.save_chapters_cb.setToolTip(tr("cb_save_chapters_tooltip"))
+
+        # Subtitle controls in Additional Assets
+        if not supports_subs:
             self.subtitles_cb.blockSignals(True)
-            self.subtitles_cb.setChecked(True)
+            self.subtitles_cb.setChecked(False)
             self.subtitles_cb.setEnabled(False)
             self.subtitles_cb.blockSignals(False)
+            if current_platform == "douyin":
+                self.subtitles_cb.setToolTip(tr("tooltip_douyin_no_subs"))
+            else:
+                self.subtitles_cb.setToolTip(tr("tooltip_tiktok_no_subs"))
         else:
             self.subtitles_cb.setEnabled(True)
+            self.subtitles_cb.setToolTip("")
+            saved_sub = self.settings_manager.get("download_subtitles", False)
+            self.subtitles_cb.blockSignals(True)
+            self.subtitles_cb.setChecked(saved_sub)
+            self.subtitles_cb.blockSignals(False)
 
         self._on_subtitles_toggled()
 
     def _on_subtitles_toggled(self) -> None:
-        """Enables or disables subtitle configuration dropdowns based on checkbox state."""
-        canonical_mode = self.mode_combo.currentData() or self.mode_combo.currentText()
-        is_sub_only = canonical_mode == DownloadMode.SUBTITLE_ONLY
-        enable_subs = is_sub_only or self.subtitles_cb.isChecked()
+        """Enables or disables subtitle configuration dropdowns based on checkbox state and platform capabilities."""
+        current_platform = self.platform_combo.currentData() if hasattr(self, "platform_combo") else "youtube"
+        adapter = PlatformRegistry.get_adapter(current_platform)
+        supports_subs = adapter.capabilities.supports_subtitles if adapter else True
+
+        if not supports_subs:
+            enable_subs = False
+        else:
+            enable_subs = self.subtitles_cb.isChecked()
 
         self.sub_source_label.setEnabled(enable_subs)
         self.sub_source_combo.setEnabled(enable_subs)
@@ -935,15 +1145,17 @@ class MainWindow(QMainWindow):
 
     def _on_setting_changed(self) -> None:
         """Saves current settings when changed by the user."""
-        if getattr(self, "_loading_settings", False):
+        if getattr(self, "_loading_settings", False) or getattr(self, "_switching_platform", False):
             return
+        current_platform = self.platform_combo.currentData() if hasattr(self, "platform_combo") else "youtube"
         self.settings_manager.set("download_mode", self.mode_combo.currentData() or self.mode_combo.currentText())
         self.settings_manager.set("format", self.format_combo.currentData() or self.format_combo.currentText())
         self.settings_manager.set("quality", self.quality_combo.currentData() or self.quality_combo.currentText())
         self.settings_manager.set("bitrate", self.bitrate_combo.currentData() or self.bitrate_combo.currentText())
         self.settings_manager.set("audio_format", self.audio_format_combo.currentData() or self.audio_format_combo.currentText())
         self.settings_manager.set("audio_bitrate", self.audio_bitrate_combo.currentData() or self.audio_bitrate_combo.currentText())
-        self.settings_manager.set("download_subtitles", self.subtitles_cb.isChecked())
+        if current_platform == "youtube":
+            self.settings_manager.set("download_subtitles", self.subtitles_cb.isChecked())
         self.settings_manager.set("subtitle_source", self.sub_source_combo.currentData() or self.sub_source_combo.currentText())
         self.settings_manager.set("subtitle_language", self.sub_lang_combo.currentData() or self.sub_lang_combo.currentText())
         self.settings_manager.set("subtitle_format", self.sub_format_combo.currentData() or self.sub_format_combo.currentText())
@@ -956,6 +1168,8 @@ class MainWindow(QMainWindow):
         self.settings_manager.set("skip_existing", self.skip_existing_cb.isChecked())
         self.settings_manager.set("create_channel_folder", self.channel_folder_cb.isChecked())
         self.settings_manager.set("create_individual_video_folders", self.individual_folder_cb.isChecked())
+        self.settings_manager.set("include_video_id_in_filename", self.include_video_id_cb.isChecked())
+        self.settings_manager.set("selected_platform", self.platform_combo.currentData() or "youtube")
         self.settings_manager.set("last_channel_url", self.url_input.text().strip())
 
     def _check_environment_status(self) -> None:
@@ -968,6 +1182,17 @@ class MainWindow(QMainWindow):
         import threading
         threading.Thread(target=RuntimeManager.get_installed_versions, daemon=True).start()
 
+        # Pre-construct SettingsDialog during idle time for instantaneous (<1 ms) display
+        QTimer.singleShot(250, self._preheat_settings_dialog)
+
+    def _preheat_settings_dialog(self) -> None:
+        """Pre-constructs SettingsDialog in idle time so clicking Settings opens instantly."""
+        if self._settings_dialog is None:
+            try:
+                self._settings_dialog = SettingsDialog(self, settings_manager=self.settings_manager)
+            except Exception:
+                pass
+
     def _set_ui_state(self, state: str) -> None:
         """
         State machine managing enabled/disabled button states.
@@ -978,7 +1203,13 @@ class MainWindow(QMainWindow):
 
         if state == "idle":
             self.scan_btn.setEnabled(True)
-            self.scan_btn.setText(tr("scan_channel"))
+            platform_id = self.platform_combo.currentData() if hasattr(self, "platform_combo") else "youtube"
+            if platform_id == "douyin":
+                self.scan_btn.setText(tr("scan_douyin"))
+            elif platform_id == "tiktok":
+                self.scan_btn.setText(tr("scan_tiktok"))
+            else:
+                self.scan_btn.setText(tr("scan_channel"))
             self.download_btn.setEnabled(has_selected)
             self.download_btn.setText(tr("btn_start_download"))
             self.pause_btn.setEnabled(False)
@@ -1018,27 +1249,81 @@ class MainWindow(QMainWindow):
     def _on_scan_clicked(self) -> None:
         """Validates URL and spawns ChannelScanWorker on a background QThread."""
         raw_url = self.url_input.text().strip()
+        platform_id = self.platform_combo.currentData() or "youtube"
 
-        is_valid, error_reason = YtDlpEngine.validate_url(raw_url)
-        if not is_valid:
-            localized_reason = error_reason
-            if I18nManager.is_chinese():
-                if "cannot be empty" in error_reason:
-                    localized_reason = "链接不能为空。请输入 YouTube 频道或播放列表链接。"
-                elif "must begin with" in error_reason:
-                    localized_reason = "链接必须以 http:// 或 https:// 开头。"
-                elif "not a valid YouTube domain" in error_reason:
-                    localized_reason = error_reason.replace("Domain", "域名").replace("is not a valid YouTube domain.", "不是有效的 YouTube 域名。")
-                elif "specific channel, playlist, or video path" in error_reason:
-                    localized_reason = "请输入具体的频道、播放列表或视频路径。"
-                elif "Malformed URL" in error_reason:
-                    localized_reason = error_reason.replace("Malformed URL:", "链接格式错误:")
-            self.log(f"[ERROR] URL Validation Failed: {error_reason}")
+        # Auto-detect if user entered a URL belonging to another platform
+        detected = PlatformDetector.identify_platform_id(raw_url)
+        if detected != "unknown" and not PlatformRegistry.is_available(detected):
+            from core.error_classifier import ErrorClassifier
+            classified = ErrorClassifier.for_unavailable_platform(detected)
+            self.log(f"[BLOCKED] {classified.title}: {classified.user_message}")
             QMessageBox.warning(
                 self,
-                tr("dialog_invalid_url_title"),
-                f"{localized_reason}\n\n{tr('dialog_invalid_url_msg')}\nhttps://www.youtube.com/@ChannelName",
+                classified.get_localized_title(),
+                f"{classified.get_localized_user_message()}\n\n{classified.get_localized_suggested_action()}",
             )
+            return
+
+        if not PlatformRegistry.is_available(platform_id):
+            from core.error_classifier import ErrorClassifier
+            classified = ErrorClassifier.for_unavailable_platform(platform_id)
+            self.log(f"[BLOCKED] {classified.title}: {classified.user_message}")
+            QMessageBox.warning(
+                self,
+                classified.get_localized_title(),
+                f"{classified.get_localized_user_message()}\n\n{classified.get_localized_suggested_action()}",
+            )
+            return
+
+        if detected in ("youtube", "tiktok", "douyin") and detected != platform_id and PlatformRegistry.is_available(detected):
+            platform_id = detected
+            self._switching_platform = True
+            idx = self.platform_combo.findData(detected)
+            if idx >= 0:
+                self.platform_combo.setCurrentIndex(idx)
+            self._active_platform = detected
+            self._apply_platform_ui(detected)
+            self.settings_manager.set("selected_platform", detected)
+            self._switching_platform = False
+
+        adapter = PlatformRegistry.get_adapter(platform_id)
+        if adapter:
+            is_valid, error_reason = adapter.validate_url(raw_url)
+        else:
+            is_valid, error_reason = YtDlpEngine.validate_url(raw_url)
+
+        if not is_valid:
+            self.log(f"[ERROR] URL Validation Failed: {error_reason}")
+            if platform_id == "douyin":
+                QMessageBox.warning(
+                    self,
+                    tr("dialog_invalid_douyin_url_title"),
+                    tr("dialog_invalid_douyin_url_msg"),
+                )
+            elif platform_id == "tiktok":
+                QMessageBox.warning(
+                    self,
+                    tr("dialog_invalid_tiktok_url_title"),
+                    tr("dialog_invalid_tiktok_url_msg"),
+                )
+            else:
+                localized_reason = error_reason
+                if I18nManager.is_chinese():
+                    if "cannot be empty" in error_reason:
+                        localized_reason = "链接不能为空。请输入 YouTube 频道或播放列表链接。"
+                    elif "must begin with" in error_reason:
+                        localized_reason = "链接必须以 http:// 或 https:// 开头。"
+                    elif "not a valid YouTube domain" in error_reason:
+                        localized_reason = error_reason.replace("Domain", "域名").replace("is not a valid YouTube domain.", "不是有效的 YouTube 域名。")
+                    elif "specific channel, playlist, or video path" in error_reason:
+                        localized_reason = "请输入具体的频道、播放列表或视频路径。"
+                    elif "Malformed URL" in error_reason:
+                        localized_reason = error_reason.replace("Malformed URL:", "链接格式错误:")
+                QMessageBox.warning(
+                    self,
+                    tr("dialog_invalid_url_title"),
+                    f"{localized_reason}\n\n{tr('dialog_invalid_url_msg')}\nhttps://www.youtube.com/@ChannelName",
+                )
             return
 
         if self._scan_worker is not None and self._scan_worker.isRunning():
@@ -1051,8 +1336,20 @@ class MainWindow(QMainWindow):
         self._set_ui_state("scanning")
         self.status_bar.showMessage(tr("status_scanning"))
 
-        browser_cookies = self.settings_manager.get("browser_cookies", "none")
-        self._scan_worker = ChannelScanWorker(url=raw_url, browser_cookies=browser_cookies, parent=self)
+        supports_cookies = (adapter.capabilities.supports_browser_cookies or adapter.capabilities.supports_cookie_file) if adapter else (platform_id == "youtube")
+        pfx = f"{platform_id}_" if platform_id != "youtube" else ""
+        browser_cookies = self.settings_manager.get(f"{pfx}browser_cookies", "none") if supports_cookies else "none"
+        custom_cookie_file = self.settings_manager.get(f"{pfx}custom_cookie_file", "") if supports_cookies else ""
+        auth_config = adapter.get_auth_config(self.settings_manager) if adapter else None
+
+        self._scan_worker = ChannelScanWorker(
+            url=raw_url,
+            browser_cookies=browser_cookies,
+            custom_cookie_file=custom_cookie_file,
+            auth_config=auth_config,
+            platform_id=platform_id,
+            parent=self,
+        )
         self._scan_worker.log_message.connect(self.log)
         self._scan_worker.scan_completed.connect(self._on_scan_completed)
         self._scan_worker.scan_error.connect(self._on_scan_error)
@@ -1061,15 +1358,22 @@ class MainWindow(QMainWindow):
 
     def _on_scan_completed(self, videos: list) -> None:
         """Populates the table with extracted videos and triggers background subtitle detection."""
+        platform_id = self.platform_combo.currentData() or "youtube"
+        adapter = PlatformRegistry.get_adapter(platform_id)
+        supports_subs = adapter.capabilities.supports_subtitles if adapter else True
+
         for v in videos:
-            v.subtitle_status = "Checking..."
+            v.subtitle_status = "Checking..." if supports_subs else "—"
         self.video_table.load_videos(videos)
         if videos:
             self._current_channel_title = videos[0].channel_title
         self.status_bar.showMessage(tr("status_scan_complete_fmt", count=len(videos)))
         self.log(tr("log_scan_finished_fmt", count=len(videos)))
 
-        # Concurrently detect subtitle availability in background
+        # Concurrently detect subtitle availability in background ONLY if platform supports it
+        if not supports_subs:
+            return
+
         if self._sub_detect_worker is not None and self._sub_detect_worker.isRunning():
             self._sub_detect_worker.cancel()
             self._sub_detect_worker.wait(500)
@@ -1089,9 +1393,31 @@ class MainWindow(QMainWindow):
         self.log(tr("log_subtitle_detection_done"))
 
     def _on_scan_error(self, error_message: str) -> None:
-        """Alerts the user when scanning fails."""
+        """Alerts the user when scanning fails with actionable localized guidance."""
         self.status_bar.showMessage(tr("status_scan_failed"))
-        QMessageBox.warning(self, tr("error"), error_message)
+        platform_id = self.platform_combo.currentData() or "youtube"
+        try:
+            from core.error_classifier import ErrorClassifier
+            from core.i18n import I18nManager
+            err = ErrorClassifier.classify(
+                raw_error=error_message,
+                stage="scan",
+                platform=platform_id,
+            )
+            is_zh = I18nManager.is_chinese()
+            lang = "zh_CN" if is_zh else "en"
+            title = err.get_localized_title(lang) or tr("error")
+            user_msg = err.get_localized_user_message(lang)
+            action = err.get_localized_suggested_action(lang)
+            if user_msg and action:
+                display_msg = f"{user_msg}\n\n{action}"
+            elif user_msg:
+                display_msg = user_msg
+            else:
+                display_msg = error_message
+            QMessageBox.warning(self, title, display_msg)
+        except Exception:
+            QMessageBox.warning(self, tr("error"), error_message)
 
     def _on_scan_finished(self) -> None:
         """Resets UI state after scan worker finishes."""
@@ -1131,7 +1457,48 @@ class MainWindow(QMainWindow):
 
         # Prepare settings
         mode_val = self.mode_combo.currentData() or self.mode_combo.currentText()
-        is_sub_only = mode_val == DownloadMode.SUBTITLE_ONLY
+        is_assets_only = mode_val in (DownloadMode.ASSETS_ONLY, "Subtitle Only")
+
+        if is_assets_only:
+            has_any_asset = (
+                self.subtitles_cb.isChecked()
+                or self.thumbnail_cb.isChecked()
+                or self.save_desc_cb.isChecked()
+                or self.save_meta_cb.isChecked()
+                or self.save_chapters_cb.isChecked()
+            )
+            if not has_any_asset:
+                QMessageBox.warning(
+                    self,
+                    tr("dialog_no_assets_selected_title"),
+                    tr("dialog_no_assets_selected_msg"),
+                )
+                return
+
+        platform_id = self.platform_combo.currentData() or "youtube"
+        if not PlatformRegistry.is_available(platform_id):
+            from core.error_classifier import ErrorClassifier
+            classified = ErrorClassifier.for_unavailable_platform(platform_id)
+            self.log(f"[BLOCKED] {classified.title}: {classified.user_message}")
+            QMessageBox.warning(
+                self,
+                classified.get_localized_title(),
+                f"{classified.get_localized_user_message()}\n\n{classified.get_localized_suggested_action()}",
+            )
+            return
+
+        adapter = PlatformRegistry.get_adapter(platform_id)
+        supports_cookies = (adapter.capabilities.supports_browser_cookies or adapter.capabilities.supports_cookie_file) if adapter else (platform_id == "youtube")
+        if platform_id == "douyin":
+            active_cookies = self.settings_manager.get("douyin_browser_cookies", "none") if supports_cookies else "none"
+            active_file = self.settings_manager.get("douyin_custom_cookie_file", "") if supports_cookies else ""
+        elif platform_id == "youtube":
+            active_cookies = self.settings_manager.get("browser_cookies", "none") if supports_cookies else "none"
+            active_file = self.settings_manager.get("custom_cookie_file", "") if supports_cookies else ""
+        else:
+            active_cookies = "none"
+            active_file = ""
+
         settings = DownloadSettings(
             download_mode=mode_val,
             format=self.format_combo.currentData() or self.format_combo.currentText(),
@@ -1142,9 +1509,10 @@ class MainWindow(QMainWindow):
             download_folder=folder_str,
             create_channel_folder=self.channel_folder_cb.isChecked(),
             create_individual_video_folders=self.individual_folder_cb.isChecked(),
+            include_video_id_in_filename=self.include_video_id_cb.isChecked(),
             skip_existing=self.skip_existing_cb.isChecked(),
             channel_title=self._current_channel_title,
-            download_subtitles=self.subtitles_cb.isChecked() or is_sub_only,
+            download_subtitles=self.subtitles_cb.isChecked(),
             subtitle_source=self.sub_source_combo.currentData() or self.sub_source_combo.currentText(),
             subtitle_language=self.sub_lang_combo.currentData() or self.sub_lang_combo.currentText(),
             subtitle_format=self.sub_format_combo.currentData() or self.sub_format_combo.currentText(),
@@ -1153,14 +1521,19 @@ class MainWindow(QMainWindow):
             save_description=self.save_desc_cb.isChecked(),
             save_metadata=self.save_meta_cb.isChecked(),
             save_chapters=self.save_chapters_cb.isChecked(),
-            browser_cookies=self.settings_manager.get("browser_cookies", "none"),
+            browser_cookies=active_cookies,
+            custom_cookie_file=active_file,
+            douyin_auth_method=self.settings_manager.get("douyin_auth_method", "none"),
+            douyin_browser_cookies=self.settings_manager.get("douyin_browser_cookies", "none"),
+            douyin_browser_profile=self.settings_manager.get("douyin_browser_profile", "Default"),
+            douyin_custom_cookie_file=self.settings_manager.get("douyin_custom_cookie_file", ""),
         )
 
         # Check FFmpeg requirement warning
         is_ffmpeg_ok, _, _, _ = FFmpegChecker.detect()
         if not is_ffmpeg_ok:
             needs_ffmpeg = (
-                (settings.download_mode != DownloadMode.AUDIO_ONLY and not is_sub_only)
+                (settings.download_mode != DownloadMode.AUDIO_ONLY and not is_assets_only)
                 or settings.audio_format in ("MP3", "WAV", "AAC", "FLAC", "OPUS")
                 or settings.download_subtitles
                 or (settings.download_thumbnail and settings.thumbnail_format != ThumbnailFormat.ORIGINAL)
@@ -1398,13 +1771,28 @@ class MainWindow(QMainWindow):
         if hasattr(self, "settings_btn"):
             self.settings_btn.setToolTip(tr("settings_tooltip"))
 
-        # URL Section
-        if hasattr(self, "url_group"):
-            self.url_group.setTitle(tr("section_youtube_link"))
-        if hasattr(self, "url_label"):
-            self.url_label.setText(tr("channel_url_label"))
-        if hasattr(self, "url_input"):
-            self.url_input.setPlaceholderText(tr("channel_url_placeholder"))
+        # Platform & URL Section
+        if hasattr(self, "platform_label"):
+            self.platform_label.setText(tr("platform_label"))
+        if hasattr(self, "platform_combo"):
+            current_id = self.platform_combo.currentData() or "youtube"
+            for i in range(self.platform_combo.count()):
+                d = self.platform_combo.itemData(i)
+                if d == "youtube":
+                    self.platform_combo.setItemText(i, tr("platform_youtube"))
+                elif d == "tiktok":
+                    self.platform_combo.setItemText(i, tr("platform_tiktok"))
+                elif d == "douyin":
+                    self.platform_combo.setItemText(i, tr("platform_douyin"))
+            self._update_platform_combo_availability()
+            self._apply_platform_ui(current_id)
+        else:
+            if hasattr(self, "url_group"):
+                self.url_group.setTitle(tr("section_youtube_link"))
+            if hasattr(self, "url_label"):
+                self.url_label.setText(tr("channel_url_label"))
+            if hasattr(self, "url_input"):
+                self.url_input.setPlaceholderText(tr("channel_url_placeholder"))
 
         # Video List Section
         if hasattr(self, "video_group"):
@@ -1461,6 +1849,16 @@ class MainWindow(QMainWindow):
             self.assets_title.setText(tr("subsection_assets"))
         if hasattr(self, "subtitles_cb"):
             self.subtitles_cb.setText(tr("cb_subtitles"))
+            current_platform = self.platform_combo.currentData() if hasattr(self, "platform_combo") else "youtube"
+            adapter = PlatformRegistry.get_adapter(current_platform)
+            supports_subs = adapter.capabilities.supports_subtitles if adapter else True
+            if not supports_subs:
+                if current_platform == "douyin":
+                    self.subtitles_cb.setToolTip(tr("tooltip_douyin_no_subs"))
+                else:
+                    self.subtitles_cb.setToolTip(tr("tooltip_tiktok_no_subs"))
+            else:
+                self.subtitles_cb.setToolTip("")
         if hasattr(self, "thumbnail_cb"):
             self.thumbnail_cb.setText(tr("cb_thumbnail"))
             self.thumbnail_cb.setToolTip(tr("cb_thumbnail_tooltip"))
@@ -1500,7 +1898,16 @@ class MainWindow(QMainWindow):
             self.save_meta_cb.setToolTip(tr("cb_save_meta_tooltip"))
         if hasattr(self, "save_chapters_cb"):
             self.save_chapters_cb.setText(tr("cb_save_chapters"))
-            self.save_chapters_cb.setToolTip(tr("cb_save_chapters_tooltip"))
+            current_platform = self.platform_combo.currentData() if hasattr(self, "platform_combo") else "youtube"
+            adapter = PlatformRegistry.get_adapter(current_platform)
+            supports_chapters = adapter.capabilities.supports_chapters if adapter else True
+            if not supports_chapters:
+                if current_platform == "douyin":
+                    self.save_chapters_cb.setToolTip(tr("tooltip_douyin_no_chapters"))
+                else:
+                    self.save_chapters_cb.setToolTip(tr("tooltip_tiktok_no_chapters"))
+            else:
+                self.save_chapters_cb.setToolTip(tr("cb_save_chapters_tooltip"))
 
         # FILE ORGANIZATION
         if hasattr(self, "org_title"):
@@ -1514,6 +1921,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, "individual_folder_cb"):
             self.individual_folder_cb.setText(tr("cb_individual_folder"))
             self.individual_folder_cb.setToolTip(tr("cb_individual_folder_tooltip"))
+        if hasattr(self, "include_video_id_cb"):
+            self.include_video_id_cb.setText(tr("cb_include_video_id"))
+            self.include_video_id_cb.setToolTip(tr("cb_include_video_id_tooltip"))
 
         # Action Buttons
         if hasattr(self, "pause_btn"):
@@ -1584,8 +1994,19 @@ class MainWindow(QMainWindow):
 
     def _on_settings_clicked(self) -> None:
         """Opens the Settings modal dialog."""
-        dialog = SettingsDialog(self, settings_manager=self.settings_manager)
-        dialog.exec()
+        if self._settings_dialog is not None:
+            dialog = self._settings_dialog
+            self._settings_dialog = None
+            try:
+                dialog._sync_auth_ui_from_settings()
+            except Exception:
+                pass
+            dialog.exec()
+            # Pre-construct next instance in idle time
+            QTimer.singleShot(500, self._preheat_settings_dialog)
+        else:
+            dialog = SettingsDialog(self, settings_manager=self.settings_manager)
+            dialog.exec()
 
     def _on_toggle_log(self) -> None:
         """Toggles visibility of the activity log to maximize vertical space."""
@@ -1606,6 +2027,13 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent) -> None:
         """Handles graceful application shutdown and settings persistence."""
+        if getattr(self, "_settings_dialog", None) is not None:
+            try:
+                self._settings_dialog.close()
+            except Exception:
+                pass
+            self._settings_dialog = None
+
         ThemeManager.unregister_listener(self._on_theme_changed)
         I18nManager.unregister_listener(self._on_language_changed)
 

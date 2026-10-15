@@ -81,6 +81,100 @@ class I18nManager:
             "zh_CN": "扫描中...",
         },
 
+        # Platform switching & TikTok
+        "platform_label": {
+            "en": "Platform",
+            "zh_CN": "平台",
+        },
+        "platform_youtube": {
+            "en": "YouTube",
+            "zh_CN": "YouTube",
+        },
+        "platform_tiktok": {
+            "en": "TikTok",
+            "zh_CN": "TikTok",
+        },
+        "platform_douyin": {
+            "en": "Douyin",
+            "zh_CN": "抖音",
+        },
+        "platform_douyin_unavailable_tooltip": {
+            "en": "Temporarily unavailable — waiting for an upstream yt-dlp fix.",
+            "zh_CN": "暂时不可用 — 等待 yt-dlp 上游修复。",
+        },
+        "platform_temporarily_unavailable_title": {
+            "en": "Platform Temporarily Unavailable",
+            "zh_CN": "平台暂时不可用",
+        },
+        "platform_douyin_unavailable_msg": {
+            "en": "Douyin is temporarily unavailable — waiting for an upstream yt-dlp fix.\n\nServer-side ArgusSecurityPlugin HTTP 403 blocking currently prevents metadata extraction without an upstream verification challenge solver.",
+            "zh_CN": "抖音暂时不可用 — 等待 yt-dlp 上游修复。\n\n由于抖音服务器端 ArgusSecurityPlugin 施加的 HTTP 403 安全拦截，在缺少上游安全验证挑战求解器的情况下暂无法解析视频详情。",
+        },
+        "section_tiktok_link": {
+            "en": "TIKTOK LINK",
+            "zh_CN": "TIKTOK 链接",
+        },
+        "section_douyin_link": {
+            "en": "DOUYIN LINK",
+            "zh_CN": "抖音链接",
+        },
+        "tiktok_url_label": {
+            "en": "TikTok Video / Profile URL",
+            "zh_CN": "TikTok 视频或主页链接",
+        },
+        "douyin_url_label": {
+            "en": "Douyin Video / Profile URL",
+            "zh_CN": "抖音视频或主页链接",
+        },
+        "tiktok_url_placeholder": {
+            "en": "https://www.tiktok.com/@creator/video/... or profile URL",
+            "zh_CN": "https://www.tiktok.com/@作者/video/... 或主页链接",
+        },
+        "douyin_url_placeholder": {
+            "en": "https://www.douyin.com/video/... or share URL",
+            "zh_CN": "https://www.douyin.com/video/... 或分享链接",
+        },
+        "scan_tiktok": {
+            "en": "Scan TikTok",
+            "zh_CN": "解析视频",
+        },
+        "scan_douyin": {
+            "en": "Scan Douyin",
+            "zh_CN": "解析视频",
+        },
+        "tooltip_tiktok_no_subs": {
+            "en": "TikTok does not provide separate subtitle tracks.",
+            "zh_CN": "TikTok 不提供独立外挂字幕文件。",
+        },
+        "tooltip_douyin_no_subs": {
+            "en": "Douyin does not provide separate subtitle tracks.",
+            "zh_CN": "抖音不提供独立外挂字幕文件。",
+        },
+        "tooltip_tiktok_no_chapters": {
+            "en": "TikTok videos do not support chapter markers.",
+            "zh_CN": "TikTok 短视频不支持章节标记。",
+        },
+        "tooltip_douyin_no_chapters": {
+            "en": "Douyin videos do not support chapter markers.",
+            "zh_CN": "抖音短视频不支持章节标记。",
+        },
+        "dialog_invalid_tiktok_url_title": {
+            "en": "Invalid TikTok URL",
+            "zh_CN": "无效的 TikTok 链接",
+        },
+        "dialog_invalid_douyin_url_title": {
+            "en": "Invalid Douyin URL",
+            "zh_CN": "无效的抖音链接",
+        },
+        "dialog_invalid_tiktok_url_msg": {
+            "en": "Please enter a valid TikTok video or profile link, for example:\nhttps://www.tiktok.com/@creator/video/1234567890123456789",
+            "zh_CN": "请输入有效的 TikTok 视频或作者主页链接，例如：\nhttps://www.tiktok.com/@creator/video/1234567890123456789",
+        },
+        "dialog_invalid_douyin_url_msg": {
+            "en": "Please enter a valid Douyin video or share link, for example:\nhttps://www.douyin.com/video/1234567890123456789",
+            "zh_CN": "请输入有效的抖音视频或分享链接，例如：\nhttps://www.douyin.com/video/1234567890123456789",
+        },
+
         # Section 2: Available Videos
         "section_available_videos": {
             "en": "AVAILABLE VIDEOS",
@@ -162,6 +256,14 @@ class I18nManager:
             "en": "Scan a YouTube channel or playlist to load videos.",
             "zh_CN": "扫描 YouTube 频道或播放列表以加载视频。",
         },
+        "empty_subtitle_tiktok": {
+            "en": "Scan a TikTok video URL to load videos.",
+            "zh_CN": "扫描 TikTok 视频链接以加载视频。",
+        },
+        "empty_subtitle_douyin": {
+            "en": "Scan a Douyin video URL to load videos.",
+            "zh_CN": "扫描抖音视频链接以加载视频。",
+        },
 
         # Video Table Context Menu
         "ctx_copy_title": {
@@ -236,7 +338,7 @@ class I18nManager:
         # Sub-panel 2: ADDITIONAL ASSETS
         "subsection_assets": {
             "en": "ADDITIONAL ASSETS",
-            "zh_CN": "其他内容",
+            "zh_CN": "附加内容",
         },
         "cb_subtitles": {
             "en": "Subtitles",
@@ -327,6 +429,14 @@ class I18nManager:
         "cb_individual_folder_tooltip": {
             "en": "Store each video's files in its own folder.",
             "zh_CN": "为每个视频创建专属文件夹存放其所有相关文件。",
+        },
+        "cb_include_video_id": {
+            "en": "Include Video ID in filename",
+            "zh_CN": "文件名包含 Video ID",
+        },
+        "cb_include_video_id_tooltip": {
+            "en": "Include YouTube Video ID in downloaded filenames.",
+            "zh_CN": "在下载的文件名中包含 Video ID。",
         },
 
         # Action Bar Buttons
@@ -469,6 +579,14 @@ class I18nManager:
         "dialog_no_selection_msg": {
             "en": "Please select at least one video to download.",
             "zh_CN": "请至少勾选一个要下载的视频。",
+        },
+        "dialog_no_assets_selected_title": {
+            "en": "No Additional Assets Selected",
+            "zh_CN": "未选择任何附加内容",
+        },
+        "dialog_no_assets_selected_msg": {
+            "en": "You have selected 'Assets Only' download mode, but no items under Additional Assets are selected.\n\nPlease select at least one item (Subtitles, Thumbnail, Description, Metadata, or Chapters) before starting the download.",
+            "zh_CN": "您已选择“仅附加内容”下载模式，但尚未在“附加内容”中勾选任何项目。\n\n请至少选择一项（字幕、封面、简介、元数据或章节标记）后再开始下载。",
         },
         "dialog_invalid_url_title": {
             "en": "Invalid URL",
@@ -622,6 +740,22 @@ class I18nManager:
             "en": "Use browser cookies if YouTube requires sign-in verification. Browsers should be closed during downloads.",
             "zh_CN": "若 YouTube 要求人机验证或登录，可调用本地浏览器 Cookie。下载时请关闭相应浏览器。",
         },
+        "settings_auth_douyin": {
+            "en": "DOUYIN AUTHENTICATION",
+            "zh_CN": "抖音身份验证",
+        },
+        "auth_platform_label": {
+            "en": "Platform",
+            "zh_CN": "平台",
+        },
+        "auth_douyin_hint": {
+            "en": "Douyin requires fresh session cookies (s_v_web_id / ttwid) to extract videos and scan creator profiles. You can extract cookies from your browser or import a cookies.txt file.",
+            "zh_CN": "抖音需要有效的会话 Cookie（s_v_web_id / ttwid）以解析视频和扫描创作者主页。您可以直接从浏览器读取 Cookie，或导入 cookies.txt 文件。",
+        },
+        "auth_douyin_none_hint": {
+            "en": "Authentication is disabled for Douyin. Note that public Douyin videos and profiles may require session cookies to extract.",
+            "zh_CN": "已对抖音禁用身份验证。注意：抖音公开视频和创作者主页通常需要会话 Cookie 方可解析。",
+        },
         "cookies_none": {
             "en": "No authentication (Default)",
             "zh_CN": "不使用认证 (默认)",
@@ -633,6 +767,10 @@ class I18nManager:
         "auth_test_tooltip": {
             "en": "Test if YouTube cookies can be safely read from the selected browser",
             "zh_CN": "测试是否能安全读取所选浏览器的 YouTube Cookie",
+        },
+        "auth_test_douyin_tooltip": {
+            "en": "Test if Douyin cookies can be safely read from the selected source",
+            "zh_CN": "测试是否能安全读取所选来源的抖音 Cookie",
         },
         "auth_test_title": {
             "en": "Authentication Test",
@@ -709,6 +847,10 @@ class I18nManager:
         "auth_dialog_title": {
             "en": "YouTube Authentication Diagnostics",
             "zh_CN": "YouTube 登录诊断",
+        },
+        "auth_dialog_douyin_title": {
+            "en": "Douyin Authentication Diagnostics",
+            "zh_CN": "抖音身份验证诊断",
         },
         "auth_dialog_stage_heading": {
             "en": "STAGE & SOURCE DETAILS",
@@ -790,6 +932,10 @@ class I18nManager:
             "en": "YouTube session detected",
             "zh_CN": "已检测到 YouTube 登录 Cookie",
         },
+        "status_douyin_session_detected": {
+            "en": "Douyin session detected",
+            "zh_CN": "已检测到抖音登录 Cookie",
+        },
         "status_decryption_failed": {
             "en": "Browser cookies could not be decrypted",
             "zh_CN": "无法解密浏览器 Cookie",
@@ -810,9 +956,25 @@ class I18nManager:
             "en": "Cookie file reference cleared.",
             "zh_CN": "已清除 Cookie 文件引用。",
         },
+        "auth_cookie_file_hint": {
+            "en": "For authenticated downloads, export your browser cookies to a Netscape-format cookies.txt file and select it here.",
+            "zh_CN": "需要登录验证时，请将浏览器 Cookie 导出为 Netscape 格式的 cookies.txt 文件，然后在此选择。",
+        },
+        "auth_fallback_notice_file": {
+            "en": "Browser cookie extraction is temporarily unavailable in the interface. Switched to your configured Custom Cookie File.",
+            "zh_CN": "界面中已暂停直接读取浏览器 Cookie。已切换至已配置的自定义 Cookie 文件。",
+        },
+        "auth_fallback_notice_none": {
+            "en": "Browser cookie extraction is temporarily unavailable in the interface. Authentication is set to None. For authenticated downloads, export your browser cookies to a Netscape-format cookies.txt file and select Custom Cookie File.",
+            "zh_CN": "界面中已暂停直接读取浏览器 Cookie。当前身份验证设为“不使用”。需要登录验证时，请将浏览器 Cookie 导出为 Netscape 格式的 cookies.txt 文件，然后选择自定义 Cookie 文件。",
+        },
         "auth_cookie_file_privacy_notice": {
             "en": "Cookie files contain sensitive YouTube session information. Keep this file private and do not share it publicly.",
             "zh_CN": "Cookie 文件包含敏感的 YouTube 登录会话信息。请妥善保管，切勿公开发布或分享。",
+        },
+        "auth_douyin_privacy_notice": {
+            "en": "Cookie files contain sensitive Douyin session information. Keep this file private and do not share it publicly.",
+            "zh_CN": "Cookie 文件包含敏感的抖音登录会话信息。请妥善保管，切勿公开发布或分享。",
         },
         "auth_diagnostics_heading": {
             "en": "AUTHENTICATION DIAGNOSTICS",
@@ -838,9 +1000,17 @@ class I18nManager:
             "en": "Channel Harvest could not decrypt the cookies stored by {browser}. This can happen with modern {browser} security protection (such as App-Bound Encryption). Your YouTube login may still be working normally in {browser}.",
             "zh_CN": "Channel Harvest 无法解密 {browser} 存储的 Cookie。这通常由现代 {browser} 安全保护机制 (如 App-Bound 绑定加密) 引起。您的 YouTube 登录在 {browser} 浏览器中可能仍然正常工作。",
         },
+        "auth_abe_douyin_reason": {
+            "en": "Channel Harvest could not decrypt the cookies stored by {browser}. This can happen with modern {browser} security protection (such as App-Bound Encryption). Your Douyin login may still be working normally in {browser}.",
+            "zh_CN": "Channel Harvest 无法解密 {browser} 存储的 Cookie。这通常由现代 {browser} 安全保护机制 (如 App-Bound 绑定加密) 引起。您的抖音登录在 {browser} 浏览器中可能仍然正常工作。",
+        },
         "auth_abe_solution": {
             "en": "Recommended solution: Export your YouTube cookies as a cookies.txt file and select it under Custom Cookie File.",
             "zh_CN": "建议解决方案：使用浏览器扩展将您的 YouTube Cookie 导出为 cookies.txt 文件，并在“自定义 Cookie 文件”中选择它。",
+        },
+        "auth_abe_douyin_solution": {
+            "en": "Recommended solution: Export your Douyin cookies as a cookies.txt file and select it under Custom Cookie File.",
+            "zh_CN": "建议解决方案：使用浏览器扩展将您的抖音 Cookie 导出为 cookies.txt 文件，并在“Cookie 文件”中选择它。",
         },
         "auth_select_cookie_file_btn": {
             "en": "Select Cookie File",
@@ -1138,6 +1308,26 @@ class I18nManager:
             "en": "({count} cookies, no YouTube cookies)",
             "zh_CN": "({count} 个 Cookie，未包含 YouTube Cookie)",
         },
+        "cookie_dy_session_count_fmt": {
+            "en": "({count} Douyin session cookies)",
+            "zh_CN": "({count} 个抖音登录 Cookie)",
+        },
+        "cookie_dy_count_no_session_fmt": {
+            "en": "({count} Douyin cookies, no active session)",
+            "zh_CN": "({count} 个抖音 Cookie，无登录会话)",
+        },
+        "cookie_count_no_dy_fmt": {
+            "en": "({count} cookies, no Douyin cookies)",
+            "zh_CN": "({count} 个 Cookie，未包含抖音 Cookie)",
+        },
+        "auth_click_test_douyin_hint": {
+            "en": "Click 'Test' to run a Douyin cookie verification.",
+            "zh_CN": "点击“测试登录”即可验证抖音 Cookie 状态。",
+        },
+        "auth_click_test_verify_douyin_hint": {
+            "en": "Click 'Test' to verify browser cookie extraction for Douyin.",
+            "zh_CN": "点击“测试登录”以检测浏览器抖音 Cookie 读取状态。",
+        },
         "auth_optional_hint": {
             "en": "Authentication is optional. Public YouTube videos download normally without configuration.",
             "zh_CN": "未配置登录。公开的 YouTube 视频无需登录即可直接下载。",
@@ -1255,7 +1445,8 @@ class I18nManager:
         DownloadMode.VIDEO_AND_AUDIO: {"en": "Video + Audio", "zh_CN": "视频 + 音频"},
         DownloadMode.VIDEO_ONLY: {"en": "Video Only", "zh_CN": "仅视频"},
         DownloadMode.AUDIO_ONLY: {"en": "Audio Only", "zh_CN": "仅音频"},
-        DownloadMode.SUBTITLE_ONLY: {"en": "Subtitle Only", "zh_CN": "仅字幕"},
+        DownloadMode.ASSETS_ONLY: {"en": "Assets Only", "zh_CN": "仅附加内容"},
+        "Subtitle Only": {"en": "Assets Only", "zh_CN": "仅附加内容"},
     }
 
     _SUB_SOURCE_LABELS = {
@@ -1377,11 +1568,19 @@ class I18nManager:
     @classmethod
     def _notify_listeners(cls) -> None:
         """Calls all registered listeners with the new language code."""
+        dead_listeners = []
         for cb in list(cls._listeners):
             try:
                 cb(cls._current_language)
-            except Exception as e:
-                print(f"[I18n] Error notifying listener: {e}")
+            except (RuntimeError, Exception) as e:
+                err_str = str(e).lower()
+                if "already deleted" in err_str or "wrapped c/c++ object" in err_str:
+                    dead_listeners.append(cb)
+                else:
+                    print(f"[I18n] Error notifying listener: {e}")
+        for dead in dead_listeners:
+            if dead in cls._listeners:
+                cls._listeners.remove(dead)
 
     @classmethod
     def tr(cls, key: str, **kwargs: Any) -> str:

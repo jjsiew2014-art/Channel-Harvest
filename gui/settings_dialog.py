@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List
 
 from PySide6.QtCore import Qt, QByteArray, QTimer, QThread, Signal
-from PySide6.QtGui import QFont, QIcon, QPixmap, QPainter, QGuiApplication
+from PySide6.QtGui import QFont, QIcon, QPixmap, QPainter, QGuiApplication, QBrush, QColor
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QDialog,
@@ -51,6 +51,7 @@ from downloader.runtime_manager import (
     ComponentInfo,
     CheckRuntimeWorker,
     InstallRuntimeWorker,
+    DetectRuntimeWorker,
 )
 from downloader.updater import YtDlpUpdater, CheckUpdateWorker, InstallUpdateWorker
 from downloader.auth_checker import (
@@ -86,11 +87,12 @@ class AuthTestWorker(QThread):
     """Background worker for asynchronous stage-aware authentication testing."""
     finished = Signal(object)
 
-    def __init__(self, browser_or_file: str, custom_cookie_path: Optional[str] = None, profile: Optional[str] = None):
+    def __init__(self, browser_or_file: str, custom_cookie_path: Optional[str] = None, profile: Optional[str] = None, platform: str = "youtube"):
         super().__init__()
         self.browser_or_file = browser_or_file
         self.custom_cookie_path = custom_cookie_path
         self.profile = profile
+        self.platform = platform
 
     def run(self):
         from downloader.auth_checker import AuthChecker
@@ -98,6 +100,7 @@ class AuthTestWorker(QThread):
             self.browser_or_file,
             custom_cookie_path=self.custom_cookie_path,
             profile=self.profile,
+            platform=self.platform,
         )
         self.finished.emit(result)
 
@@ -121,6 +124,10 @@ class SettingsDialog(QDialog):
         self.setModal(True)
 
         self.settings_manager = settings_manager or SettingsManager()
+        from core.platform import PlatformRegistry
+        self._current_auth_platform = self.settings_manager.get("selected_platform", "youtube")
+        if not PlatformRegistry.is_available(self._current_auth_platform):
+            self._current_auth_platform = "youtube"
 
         logo_file = get_logo_file()
         if logo_file.exists():
@@ -128,8 +135,18 @@ class SettingsDialog(QDialog):
 
         self._ver_badge: Optional[QLabel] = None
 
-        # Live runtime state
-        self._runtime_components: Dict[str, ComponentInfo] = RuntimeManager.get_installed_versions()
+        # Live runtime state (fast / non-blocking)
+        self._detect_worker: Optional[DetectRuntimeWorker] = None
+        cached = RuntimeManager.get_cached_versions_if_valid()
+        if cached is not None:
+            self._runtime_components = cached
+        else:
+            # Display placeholders immediately for zero UI latency, then detect in background
+            self._runtime_components = RuntimeManager.get_placeholder_versions()
+            self._detect_worker = DetectRuntimeWorker(parent=self)
+            self._detect_worker.detection_completed.connect(self._on_runtime_detected)
+            self._detect_worker.start()
+
         self._check_worker: Optional[CheckRuntimeWorker] = None
         self._install_worker: Optional[InstallRuntimeWorker] = None
 
@@ -137,6 +154,7 @@ class SettingsDialog(QDialog):
         self._current_ytdlp_ver = self._runtime_components.get("ytdlp", ComponentInfo("ytdlp", "yt-dlp")).current_version
         self._latest_ytdlp_ver = ""
         self._last_auth_result: Optional[Any] = None
+        self._last_auth_results: Dict[str, Any] = {}
 
         self._init_ui()
 
@@ -147,6 +165,11 @@ class SettingsDialog(QDialog):
     def closeEvent(self, event):
         ThemeManager.unregister_listener(self._on_theme_updated)
         I18nManager.unregister_listener(self._on_language_updated)
+        if self._detect_worker is not None and self._detect_worker.isRunning():
+            try:
+                self._detect_worker.detection_completed.disconnect()
+            except Exception:
+                pass
         super().closeEvent(event)
 
     def _create_divider(self) -> QFrame:
@@ -325,7 +348,11 @@ class SettingsDialog(QDialog):
             name_lbl = QLabel(info.display_name)
             name_lbl.setStyleSheet("font-size: 12px; font-weight: 600;")
             
-            ver_lbl = QLabel(f"v{info.current_version}" if not info.current_version.startswith("v") else info.current_version)
+            if info.current_version and info.current_version not in ("...", "Detecting..."):
+                ver_display = f"v{info.current_version}" if not info.current_version.startswith("v") else info.current_version
+            else:
+                ver_display = info.current_version or "..."
+            ver_lbl = QLabel(ver_display)
             ver_lbl.setStyleSheet("font-size: 12px; font-family: Consolas, monospace;")
             
             status_lbl = QLabel(self._format_status_html(info.status))
@@ -378,11 +405,31 @@ class SettingsDialog(QDialog):
         layout.addWidget(self._create_divider())
 
         # ---------------------------------------------------------------------
-        # 4. YOUTUBE AUTHENTICATION SECTION
+        # 4. PLATFORM AUTHENTICATION SECTION
         # ---------------------------------------------------------------------
-        self.auth_title = QLabel(tr("settings_auth"))
+        auth_header_row = QHBoxLayout()
+        auth_header_row.setContentsMargins(0, 0, 0, 0)
+        self.auth_title = QLabel(tr("settings_auth_douyin") if self._current_auth_platform == "douyin" else tr("settings_auth"))
         self.auth_title.setObjectName("sectionHeader")
-        layout.addWidget(self.auth_title)
+        auth_header_row.addWidget(self.auth_title)
+        auth_header_row.addStretch()
+
+        self.auth_platform_lbl = QLabel(tr("auth_platform_label"))
+        self.auth_platform_lbl.setStyleSheet("font-size: 12px; color: #64748b; font-weight: 500;")
+        auth_header_row.addWidget(self.auth_platform_lbl)
+
+        self.auth_platform_combo = QComboBox()
+        self.auth_platform_combo.setFixedWidth(130)
+        self.auth_platform_combo.addItem("YouTube", "youtube")
+        self.auth_platform_combo.addItem("Douyin (抖音)", "douyin")
+        self._update_auth_platform_combo_availability()
+        init_idx = self.auth_platform_combo.findData(self._current_auth_platform)
+        if init_idx >= 0:
+            self.auth_platform_combo.setCurrentIndex(init_idx)
+        self.auth_platform_combo.currentIndexChanged.connect(self._on_auth_platform_changed)
+        auth_header_row.addWidget(self.auth_platform_combo)
+
+        layout.addLayout(auth_header_row)
 
         auth_box = QVBoxLayout()
         auth_box.setSpacing(8)
@@ -398,6 +445,8 @@ class SettingsDialog(QDialog):
 
         self.auth_method_group = QButtonGroup(self)
         self.auth_none_rb = QRadioButton(tr("auth_method_none"))
+        # self.auth_browser_rb is preserved for backward compatibility and future reactivation,
+        # but is temporarily hidden from the visible GUI due to Chromium DPAPI cookie encryption.
         self.auth_browser_rb = QRadioButton(tr("auth_method_browser"))
         self.auth_file_rb = QRadioButton(tr("auth_method_custom_file_radio"))
 
@@ -410,11 +459,22 @@ class SettingsDialog(QDialog):
         self.auth_method_group.addButton(self.auth_file_rb, 2)
         self.auth_method_group.idClicked.connect(self._on_auth_method_button_clicked)
 
+        # Show only None and Custom Cookie File in the visible GUI
         method_row.addWidget(self.auth_none_rb)
-        method_row.addWidget(self.auth_browser_rb)
+        # Note: Do not display a disabled Browser Cookies radio button; present only None and Custom Cookie File.
+        self.auth_browser_rb.setVisible(False)
         method_row.addWidget(self.auth_file_rb)
         method_row.addStretch()
         auth_box.addLayout(method_row)
+
+        # Fallback notice banner shown if saved settings previously used Browser Cookies
+        self.auth_fallback_notice_lbl = QLabel()
+        self.auth_fallback_notice_lbl.setStyleSheet(
+            "font-size: 11px; color: #d97706; padding: 6px 10px; background: rgba(245, 158, 11, 0.12); border-radius: 4px;"
+        )
+        self.auth_fallback_notice_lbl.setWordWrap(True)
+        self.auth_fallback_notice_lbl.setVisible(False)
+        auth_box.addWidget(self.auth_fallback_notice_lbl)
 
         # 4.2 Panel 1: None (Authentication Disabled)
         self.auth_none_panel = QWidget()
@@ -517,6 +577,11 @@ class SettingsDialog(QDialog):
         file_layout = QVBoxLayout(self.auth_file_panel)
         file_layout.setContentsMargins(0, 4, 0, 4)
         file_layout.setSpacing(6)
+
+        self.cookie_file_hint_lbl = QLabel(tr("auth_cookie_file_hint"))
+        self.cookie_file_hint_lbl.setStyleSheet("font-size: 11px; color: #64748b;")
+        self.cookie_file_hint_lbl.setWordWrap(True)
+        file_layout.addWidget(self.cookie_file_hint_lbl)
 
         cfile_row = QHBoxLayout()
         cfile_row.setSpacing(8)
@@ -713,9 +778,6 @@ class SettingsDialog(QDialog):
 
         root_layout.addLayout(footer_layout)
 
-        # Apply current language
-        self.retranslate_ui()
-
     # -------------------------------------------------------------------------
     # Styling and Theme Listeners
     # -------------------------------------------------------------------------
@@ -728,7 +790,7 @@ class SettingsDialog(QDialog):
             return f"<span style='color: #f59e0b; font-weight: 600;'>● {tr('status_update_available')}{tag}</span>"
         elif "up to date" in low:
             return f"<span style='color: #16a34a; font-weight: 600;'>● {tr('status_up_to_date')}</span>"
-        elif "checking" in low:
+        elif "checking" in low or "detecting" in low:
             return f"<span style='color: #0284c7; font-weight: 500;'>● {tr('status_checking')}</span>"
         elif "not installed" in low:
             return f"<span style='color: #dc2626; font-weight: 600;'>● {tr('status_not_installed')}</span>"
@@ -784,9 +846,11 @@ class SettingsDialog(QDialog):
             return f"<span style='color: #64748b;'>{tr('status_not_configured')}</span>"
         elif status in (
             AuthStatusCode.YOUTUBE_SESSION_AUTHENTICATED,
+            getattr(AuthStatusCode, "DOUYIN_SESSION_AUTHENTICATED", "DOUYIN_SESSION_AUTHENTICATED"),
             getattr(AuthStatusCode, "SUCCESS", "SUCCESS"),
         ):
-            return f"<span style='color: #16a34a; font-weight: 600;'>✓ {tr('status_session_detected')}</span>"
+            sess_label = tr("status_douyin_session_detected") if self._current_auth_platform == "douyin" else tr("status_session_detected")
+            return f"<span style='color: #16a34a; font-weight: 600;'>✓ {sess_label}</span>"
         elif status in (
             AuthStatusCode.COOKIE_FILE_VALID,
             AuthStatusCode.BROWSER_COOKIE_EXTRACTION_SUCCESS,
@@ -794,45 +858,137 @@ class SettingsDialog(QDialog):
             return f"<span style='color: #16a34a; font-weight: 500;'>{tr('status_cookie_file_detected')}</span>"
         elif status == AuthStatusCode.COOKIE_DECRYPTION_FAILED:
             return f"<span style='color: #d97706; font-weight: 600;'>⚠️ {tr('status_decryption_failed')}</span>"
-        elif status == AuthStatusCode.COOKIE_FILE_INVALID:
+        elif status in (
+            AuthStatusCode.COOKIE_FILE_INVALID,
+            getattr(AuthStatusCode, "NO_DOUYIN_COOKIES", "NO_DOUYIN_COOKIES"),
+            AuthStatusCode.NO_YOUTUBE_COOKIES,
+        ):
             return f"<span style='color: #dc2626; font-weight: 500;'>❌ {tr('status_invalid_cookie_file')}</span>"
         else:
             return f"<span style='color: #64748b;'>{status}</span>"
 
+    def _update_auth_platform_combo_availability(self) -> None:
+        """
+        Applies enabled/disabled state, styling, and tooltip to auth platform selector items.
+        Keeps available platforms enabled. Greys out and disables Douyin while temporarily frozen.
+        """
+        if not hasattr(self, "auth_platform_combo"):
+            return
+        from core.platform import PlatformRegistry
+        model = self.auth_platform_combo.model()
+        for i in range(self.auth_platform_combo.count()):
+            plat_id = self.auth_platform_combo.itemData(i)
+            item = model.item(i) if hasattr(model, "item") else None
+            if item is None:
+                continue
+            is_avail = PlatformRegistry.is_available(plat_id)
+            if is_avail:
+                item.setEnabled(True)
+                item.setSelectable(True)
+                item.setToolTip("")
+                item.setData(None, Qt.ItemDataRole.ForegroundRole)
+            else:
+                item.setEnabled(False)
+                item.setSelectable(False)
+                tooltip = tr("platform_douyin_unavailable_tooltip") if plat_id == "douyin" else tr(f"platform_{plat_id}_unavailable_tooltip")
+                item.setToolTip(tooltip)
+                # Subtle greyed-out appearance consistent with current UI and both light/dark themes
+                item.setForeground(QBrush(QColor("#94a3b8")))
+
+    def _on_auth_platform_changed(self, index: int) -> None:
+        """Handles switching the authentication platform target between YouTube and Douyin."""
+        selected = self.auth_platform_combo.currentData() or "youtube"
+        from core.platform import PlatformRegistry
+        if not PlatformRegistry.is_available(selected):
+            fallback = "youtube"
+            idx = self.auth_platform_combo.findData(fallback)
+            if idx >= 0 and self.auth_platform_combo.currentIndex() != idx:
+                self.auth_platform_combo.blockSignals(True)
+                self.auth_platform_combo.setCurrentIndex(idx)
+                self.auth_platform_combo.blockSignals(False)
+            selected = fallback
+
+        self._current_auth_platform = selected
+        self._last_auth_result = self._last_auth_results.get(selected)
+        if selected == "douyin":
+            self.auth_title.setText(tr("settings_auth_douyin"))
+            self.none_hint_lbl.setText(tr("auth_douyin_none_hint"))
+            self.browser_hint_lbl.setText(tr("auth_douyin_hint"))
+            self.cookie_privacy_lbl.setText(f"🔒 <i>{tr('auth_douyin_privacy_notice')}</i>")
+            self._test_browser_btn.setToolTip(tr("auth_test_douyin_tooltip"))
+            self._test_file_btn.setToolTip(tr("auth_test_douyin_tooltip"))
+        else:
+            self.auth_title.setText(tr("settings_auth"))
+            self.none_hint_lbl.setText(tr("auth_none_hint"))
+            self.browser_hint_lbl.setText(tr("settings_cookies_hint"))
+            self.cookie_privacy_lbl.setText(f"🔒 <i>{tr('auth_cookie_file_privacy_notice')}</i>")
+            self._test_browser_btn.setToolTip(tr("auth_test_tooltip"))
+            self._test_file_btn.setToolTip(tr("auth_test_tooltip"))
+        self._sync_auth_ui_from_settings()
+
+    def _update_browser_fallback_notice(self, fallback_method: str) -> None:
+        """Updates the fallback explanatory notice when Browser Cookies is migrated/hidden."""
+        self._current_fallback_method = fallback_method
+        if fallback_method == "custom_file":
+            self.auth_fallback_notice_lbl.setText(f"ℹ️ {tr('auth_fallback_notice_file')}")
+        else:
+            self.auth_fallback_notice_lbl.setText(f"ℹ️ {tr('auth_fallback_notice_none')}")
+
     def _sync_auth_ui_from_settings(self) -> None:
         """Synchronizes UI controls with persistent authentication settings."""
-        auth_method = self.settings_manager.get("auth_method", "none")
-        if auth_method == "none":
-            b_cookie = self.settings_manager.get("browser_cookies", "none")
+        pfx = "douyin_" if self._current_auth_platform == "douyin" else ""
+        raw_auth_method = self.settings_manager.get(f"{pfx}auth_method", "none")
+        if raw_auth_method == "none":
+            b_cookie = self.settings_manager.get(f"{pfx}browser_cookies", "none")
             if b_cookie == "custom_file":
-                auth_method = "custom_file"
+                raw_auth_method = "custom_file"
             elif b_cookie not in ("none", ""):
-                auth_method = "browser"
+                raw_auth_method = "browser"
 
-        browser_choice = self.settings_manager.get("browser_cookies", "chrome")
+        browser_choice = self.settings_manager.get(f"{pfx}browser_cookies", "chrome" if pfx == "" else "none")
         if browser_choice in ("none", "custom_file"):
             browser_choice = "chrome"
 
-        profile_choice = self.settings_manager.get("browser_profile", "Default")
-        custom_file = self.settings_manager.get("custom_cookie_file", "")
-        last_status = self.settings_manager.get("last_auth_status", "NOT_CONFIGURED")
+        profile_choice = self.settings_manager.get(f"{pfx}browser_profile", "Default")
+        custom_file = self.settings_manager.get(f"{pfx}custom_cookie_file", "")
+        last_status = self.settings_manager.get(f"{pfx}last_auth_status", "NOT_CONFIGURED")
 
-        # Update Radio Group
+        # Safely handle saved 'browser' setting when opening the settings page:
+        # Browser Cookies option is temporarily hidden from the visible GUI due to Chromium DPAPI encryption.
+        # Fall back safely: if a valid custom cookie file is configured, select Custom Cookie File;
+        # otherwise select None. Never automatically switch to a nonexistent or invalid cookie file.
+        if raw_auth_method == "browser":
+            has_valid_cookie_file = bool(custom_file and Path(custom_file).is_file())
+            fallback_method = "custom_file" if has_valid_cookie_file else "none"
+            auth_method = fallback_method
+
+            # Deliberate migration with clearly defined fallback
+            self.settings_manager.set(f"{pfx}auth_method", fallback_method)
+            if fallback_method == "none":
+                self.settings_manager.set(f"{pfx}browser_cookies", "none")
+            else:
+                self.settings_manager.set(f"{pfx}browser_cookies", "custom_file")
+
+            self._update_browser_fallback_notice(fallback_method)
+            self.auth_fallback_notice_lbl.setVisible(True)
+        else:
+            auth_method = raw_auth_method
+            self.auth_fallback_notice_lbl.setVisible(False)
+
+        # Update Radio Group - present only None and Custom Cookie File in GUI
         self.auth_method_group.blockSignals(True)
         if auth_method == "none":
             self.auth_none_rb.setChecked(True)
-        elif auth_method == "browser":
-            self.auth_browser_rb.setChecked(True)
         elif auth_method == "custom_file":
             self.auth_file_rb.setChecked(True)
         self.auth_method_group.blockSignals(False)
 
-        # Show/Hide panels
+        # Show/Hide panels - Browser panel is always kept hidden in GUI
         self.auth_none_panel.setVisible(auth_method == "none")
-        self.auth_browser_panel.setVisible(auth_method == "browser")
+        self.auth_browser_panel.setVisible(False)
         self.auth_file_panel.setVisible(auth_method == "custom_file")
 
-        # Browser dropdown
+        # Browser dropdown (kept synchronized for backend / diagnostics / future reactivation)
         self.browser_combo.blockSignals(True)
         b_idx = self.browser_combo.findData(browser_choice)
         if b_idx >= 0:
@@ -864,7 +1020,8 @@ class SettingsDialog(QDialog):
         for p in profiles:
             self.profile_combo.addItem(p, p)
 
-        target = selected_profile or self.settings_manager.get("browser_profile", "Default")
+        pfx = "douyin_" if self._current_auth_platform == "douyin" else ""
+        target = selected_profile or self.settings_manager.get(f"{pfx}browser_profile", "Default")
         idx = self.profile_combo.findText(target)
         if idx >= 0:
             self.profile_combo.setCurrentIndex(idx)
@@ -874,23 +1031,27 @@ class SettingsDialog(QDialog):
 
     def _on_auth_method_button_clicked(self, id_: int) -> None:
         """Handles switching between None (0), Browser Cookies (1), and Custom Cookie File (2)."""
+        pfx = "douyin_" if self._current_auth_platform == "douyin" else ""
         method_map = {0: "none", 1: "browser", 2: "custom_file"}
         method = method_map.get(id_, "none")
-        self.settings_manager.set("auth_method", method)
+        self.settings_manager.set(f"{pfx}auth_method", method)
 
         if method == "none":
-            self.settings_manager.set("browser_cookies", "none")
+            self.settings_manager.set(f"{pfx}browser_cookies", "none")
         elif method == "browser":
             b_choice = self.browser_combo.currentData() or "chrome"
-            self.settings_manager.set("browser_cookies", b_choice)
+            self.settings_manager.set(f"{pfx}browser_cookies", b_choice)
             p_choice = self.profile_combo.currentText() or "Default"
-            self.settings_manager.set("browser_profile", p_choice)
+            self.settings_manager.set(f"{pfx}browser_profile", p_choice)
         elif method == "custom_file":
-            self.settings_manager.set("browser_cookies", "custom_file")
+            self.settings_manager.set(f"{pfx}browser_cookies", "custom_file")
 
         self.auth_none_panel.setVisible(method == "none")
-        self.auth_browser_panel.setVisible(method == "browser")
+        self.auth_browser_panel.setVisible(False)
         self.auth_file_panel.setVisible(method == "custom_file")
+
+        # Hide fallback notice once the user actively selects a method
+        self.auth_fallback_notice_lbl.setVisible(False)
 
         if method == "browser":
             cur_b = self.browser_combo.currentData() or "chrome"
@@ -900,17 +1061,19 @@ class SettingsDialog(QDialog):
 
     def _on_browser_changed(self, index: int) -> None:
         """Persists the selected browser cookies authentication setting."""
+        pfx = "douyin_" if self._current_auth_platform == "douyin" else ""
         browser_choice = self.browser_combo.currentData() or "chrome"
-        if self.settings_manager.get("auth_method") == "browser":
-            self.settings_manager.set("browser_cookies", browser_choice)
+        if self.settings_manager.get(f"{pfx}auth_method") == "browser":
+            self.settings_manager.set(f"{pfx}browser_cookies", browser_choice)
         self._populate_profiles_for_browser(browser_choice)
         self.browser_abe_widget.setVisible(False)
         self.browser_status_lbl.setText(f"<b>{tr('auth_status_label')}</b> {tr('status_not_tested')}")
 
     def _on_profile_changed(self, index: int) -> None:
         """Persists the selected browser profile."""
+        pfx = "douyin_" if self._current_auth_platform == "douyin" else ""
         profile_choice = self.profile_combo.currentText() or "Default"
-        self.settings_manager.set("browser_profile", profile_choice)
+        self.settings_manager.set(f"{pfx}browser_profile", profile_choice)
         self.browser_status_lbl.setText(f"<b>{tr('auth_status_label')}</b> {tr('status_not_tested')}")
 
     def _update_cookie_file_validation(self, path_str: str) -> None:
@@ -921,7 +1084,7 @@ class SettingsDialog(QDialog):
             )
             return
 
-        validation = validate_cookie_file(path_str)
+        validation = validate_cookie_file(path_str, platform=self._current_auth_platform)
         if not validation.get("is_valid", False):
             msg = validation.get("message", tr("status_invalid_cookie_file"))
             self.cookie_file_status_lbl.setText(
@@ -932,30 +1095,49 @@ class SettingsDialog(QDialog):
             cookie_cnt = validation.get("cookie_count", 0)
             yt_cnt = validation.get("youtube_cookie_count", 0)
             has_session = validation.get("has_session", False)
-            if has_session:
-                self.cookie_file_status_lbl.setText(
-                    f"<b>{tr('auth_status_label')}</b> <span style='color: #16a34a;'>{tr('status_cookie_file_detected')}</span> "
-                    f"<span style='font-size: 11px; color: #16a34a;'>{tr('cookie_yt_session_count_fmt', count=yt_cnt)}</span>"
-                )
-            elif yt_cnt > 0:
-                self.cookie_file_status_lbl.setText(
-                    f"<b>{tr('auth_status_label')}</b> <span style='color: #16a34a;'>{tr('status_cookie_file_detected')}</span> "
-                    f"<span style='font-size: 11px; color: #64748b;'>{tr('cookie_yt_count_no_session_fmt', count=yt_cnt)}</span>"
-                )
+            if self._current_auth_platform == "douyin":
+                if has_session:
+                    self.cookie_file_status_lbl.setText(
+                        f"<b>{tr('auth_status_label')}</b> <span style='color: #16a34a;'>{tr('status_cookie_file_detected')}</span> "
+                        f"<span style='font-size: 11px; color: #16a34a;'>{tr('cookie_dy_session_count_fmt', count=yt_cnt)}</span>"
+                    )
+                elif yt_cnt > 0:
+                    self.cookie_file_status_lbl.setText(
+                        f"<b>{tr('auth_status_label')}</b> <span style='color: #16a34a;'>{tr('status_cookie_file_detected')}</span> "
+                        f"<span style='font-size: 11px; color: #64748b;'>{tr('cookie_dy_count_no_session_fmt', count=yt_cnt)}</span>"
+                    )
+                else:
+                    self.cookie_file_status_lbl.setText(
+                        f"<b>{tr('auth_status_label')}</b> <span style='color: #d97706;'>{tr('status_cookie_file_detected')}</span> "
+                        f"<span style='font-size: 11px; color: #d97706;'>{tr('cookie_count_no_dy_fmt', count=cookie_cnt)}</span>"
+                    )
             else:
-                self.cookie_file_status_lbl.setText(
-                    f"<b>{tr('auth_status_label')}</b> <span style='color: #d97706;'>{tr('status_cookie_file_detected')}</span> "
-                    f"<span style='font-size: 11px; color: #d97706;'>{tr('cookie_count_no_yt_fmt', count=cookie_cnt)}</span>"
-                )
+                if has_session:
+                    self.cookie_file_status_lbl.setText(
+                        f"<b>{tr('auth_status_label')}</b> <span style='color: #16a34a;'>{tr('status_cookie_file_detected')}</span> "
+                        f"<span style='font-size: 11px; color: #16a34a;'>{tr('cookie_yt_session_count_fmt', count=yt_cnt)}</span>"
+                    )
+                elif yt_cnt > 0:
+                    self.cookie_file_status_lbl.setText(
+                        f"<b>{tr('auth_status_label')}</b> <span style='color: #16a34a;'>{tr('status_cookie_file_detected')}</span> "
+                        f"<span style='font-size: 11px; color: #64748b;'>{tr('cookie_yt_count_no_session_fmt', count=yt_cnt)}</span>"
+                    )
+                else:
+                    self.cookie_file_status_lbl.setText(
+                        f"<b>{tr('auth_status_label')}</b> <span style='color: #d97706;'>{tr('status_cookie_file_detected')}</span> "
+                        f"<span style='font-size: 11px; color: #d97706;'>{tr('cookie_count_no_yt_fmt', count=cookie_cnt)}</span>"
+                    )
 
     def _on_cookie_file_changed(self, text: str) -> None:
         """Persists the custom cookie file path and updates validation."""
+        pfx = "douyin_" if self._current_auth_platform == "douyin" else ""
         path = text.strip()
-        self.settings_manager.set("custom_cookie_file", path)
+        self.settings_manager.set(f"{pfx}custom_cookie_file", path)
         self._update_cookie_file_validation(path)
 
     def _on_browse_cookie_file_clicked(self) -> None:
         """Opens a file dialog to select an exported Netscape cookies.txt file."""
+        pfx = "douyin_" if self._current_auth_platform == "douyin" else ""
         current_dir = ""
         if hasattr(self, "cookie_file_edit"):
             val = self.cookie_file_edit.text().strip()
@@ -972,14 +1154,15 @@ class SettingsDialog(QDialog):
             norm_path = str(Path(file_path).resolve())
             if hasattr(self, "cookie_file_edit"):
                 self.cookie_file_edit.setText(norm_path)
-            self.settings_manager.set("custom_cookie_file", norm_path)
+            self.settings_manager.set(f"{pfx}custom_cookie_file", norm_path)
             self._update_cookie_file_validation(norm_path)
 
     def _on_clear_cookie_file_clicked(self) -> None:
         """Clears the cookie file path setting without deleting the file on disk."""
+        pfx = "douyin_" if self._current_auth_platform == "douyin" else ""
         if hasattr(self, "cookie_file_edit"):
             self.cookie_file_edit.setText("")
-        self.settings_manager.set("custom_cookie_file", "")
+        self.settings_manager.set(f"{pfx}custom_cookie_file", "")
         self.cookie_file_status_lbl.setText(
             f"<b>{tr('auth_status_label')}</b> <span style='color: #64748b;'>{tr('auth_cookie_file_cleared')}</span>"
         )
@@ -998,6 +1181,23 @@ class SettingsDialog(QDialog):
     # -------------------------------------------------------------------------
     # Runtime Manager Actions
     # -------------------------------------------------------------------------
+
+    def _on_runtime_detected(self, results: Dict[str, ComponentInfo]) -> None:
+        """Asynchronously updates runtime table when initial background detection completes."""
+        self._runtime_components = results
+        self._current_ytdlp_ver = results.get("ytdlp", ComponentInfo("ytdlp", "yt-dlp")).current_version
+
+        if hasattr(self, "_comp_widgets"):
+            for comp_key, info in results.items():
+                widgets = self._comp_widgets.get(comp_key)
+                if not widgets:
+                    continue
+                if info.current_version and info.current_version not in ("...", "Detecting..."):
+                    ver_display = f"v{info.current_version}" if not info.current_version.startswith("v") else info.current_version
+                else:
+                    ver_display = info.current_version or "..."
+                widgets["version"].setText(ver_display)
+                widgets["status"].setText(self._format_status_html(info.status, latest_ver=info.latest_version))
 
     def _on_check_runtime_clicked(self) -> None:
         """Initiates background checking of all 4 runtime components."""
@@ -1027,7 +1227,10 @@ class SettingsDialog(QDialog):
             if not widgets:
                 continue
 
-            ver_display = f"v{info.current_version}" if not info.current_version.startswith("v") else info.current_version
+            if info.current_version and info.current_version not in ("...", "Detecting..."):
+                ver_display = f"v{info.current_version}" if not info.current_version.startswith("v") else info.current_version
+            else:
+                ver_display = info.current_version or "..."
             widgets["version"].setText(ver_display)
             widgets["status"].setText(self._format_status_html(info.status, latest_ver=info.latest_version))
 
@@ -1172,7 +1375,7 @@ class SettingsDialog(QDialog):
     # -------------------------------------------------------------------------
 
     def _on_test_browser_auth_clicked(self) -> None:
-        """Safely verifies browser cookie access for YouTube."""
+        """Safely verifies browser cookie access for current platform."""
         browser_choice = self.browser_combo.currentData() or "chrome"
         profile_choice = self.profile_combo.currentText() or "Default"
 
@@ -1182,12 +1385,13 @@ class SettingsDialog(QDialog):
         self._auth_worker = AuthTestWorker(
             browser_choice,
             profile=profile_choice,
+            platform=self._current_auth_platform,
         )
         self._auth_worker.finished.connect(self._on_auth_test_finished)
         self._auth_worker.start()
 
     def _on_test_file_auth_clicked(self) -> None:
-        """Safely verifies custom cookie file access for YouTube."""
+        """Safely verifies custom cookie file access for current platform."""
         custom_path = self.cookie_file_edit.text().strip()
         if not custom_path:
             QMessageBox.information(
@@ -1203,13 +1407,15 @@ class SettingsDialog(QDialog):
         self._auth_worker = AuthTestWorker(
             "custom_file",
             custom_cookie_path=custom_path,
+            platform=self._current_auth_platform,
         )
         self._auth_worker.finished.connect(self._on_auth_test_finished)
         self._auth_worker.start()
 
     def _on_test_auth_clicked(self) -> None:
         """Backward compatible delegate for testing auth."""
-        auth_method = self.settings_manager.get("auth_method", "none")
+        pfx = "douyin_" if self._current_auth_platform == "douyin" else ""
+        auth_method = self.settings_manager.get(f"{pfx}auth_method", "none")
         if auth_method == "custom_file":
             self._on_test_file_auth_clicked()
         elif auth_method == "browser":
@@ -1230,25 +1436,28 @@ class SettingsDialog(QDialog):
             self._test_file_btn.setEnabled(True)
             self._test_file_btn.setText(tr("auth_test_btn"))
 
+        pfx = "douyin_" if self._current_auth_platform == "douyin" else ""
         self._last_auth_result = result
+        self._last_auth_results[self._current_auth_platform] = result
         code_name = result.status_code.name if hasattr(result.status_code, "name") else str(result.status_code)
-        self.settings_manager.set("last_auth_status", code_name)
+        self.settings_manager.set(f"{pfx}last_auth_status", code_name)
 
         # Update last test label in diagnostics subsection
         if hasattr(self, "auth_last_test_lbl"):
             self.auth_last_test_lbl.setText(f"<b>{tr('auth_last_test')}</b> {self._format_status_badge(code_name)}")
 
         # Update panel-specific status labels
+        sess_text = tr("status_douyin_session_detected") if self._current_auth_platform == "douyin" else tr("status_session_detected")
         if result.auth_method == "Custom Cookie File":
             if result.success or result.has_session:
                 self.cookie_file_status_lbl.setText(
-                    f"<b>{tr('auth_status_label')}</b> <span style='color: #16a34a;'>{tr('status_session_detected')}</span>"
+                    f"<b>{tr('auth_status_label')}</b> <span style='color: #16a34a;'>{sess_text}</span>"
                 )
             elif result.status_code == AuthStatusCode.COOKIE_FILE_VALID:
                 self.cookie_file_status_lbl.setText(
                     f"<b>{tr('auth_status_label')}</b> <span style='color: #16a34a;'>{tr('status_cookie_file_detected')}</span>"
                 )
-            elif result.status_code == AuthStatusCode.COOKIE_FILE_INVALID:
+            elif result.status_code in (AuthStatusCode.COOKIE_FILE_INVALID, getattr(AuthStatusCode, "NO_DOUYIN_COOKIES", "NO_DOUYIN_COOKIES"), AuthStatusCode.NO_YOUTUBE_COOKIES):
                 self.cookie_file_status_lbl.setText(
                     f"<b>{tr('auth_status_label')}</b> <span style='color: #dc2626;'>{tr('status_invalid_cookie_file')}</span>"
                 )
@@ -1263,12 +1472,12 @@ class SettingsDialog(QDialog):
                     f"<b>{tr('auth_status_label')}</b> <span style='color: #d97706;'>{tr('status_decryption_failed')}</span>"
                 )
                 b_name = result.browser_name.title() if result.browser_name else "Browser"
-                reason_text = tr("auth_abe_reason", browser=b_name)
+                reason_text = tr("auth_abe_douyin_reason", browser=b_name) if self._current_auth_platform == "douyin" else tr("auth_abe_reason", browser=b_name)
                 self.browser_abe_lbl.setText(f"⚠️ {reason_text}")
                 self.browser_abe_widget.setVisible(True)
             elif result.success or result.has_session:
                 self.browser_status_lbl.setText(
-                    f"<b>{tr('auth_status_label')}</b> <span style='color: #16a34a;'>{tr('status_session_detected')}</span>"
+                    f"<b>{tr('auth_status_label')}</b> <span style='color: #16a34a;'>{sess_text}</span>"
                 )
                 self.browser_abe_widget.setVisible(False)
             elif result.status_code == AuthStatusCode.BROWSER_COOKIE_EXTRACTION_SUCCESS:
@@ -1287,30 +1496,39 @@ class SettingsDialog(QDialog):
 
     def _on_view_auth_diagnostic_clicked(self) -> None:
         """Displays the diagnostic details dialog for the last test or current status."""
-        if self._last_auth_result is not None:
-            dlg = AuthResultDialog(self._last_auth_result, parent=self)
+        last_res = self._last_auth_results.get(self._current_auth_platform)
+        if last_res is None and self._last_auth_result is not None:
+            if getattr(self._last_auth_result, "platform", "youtube") == self._current_auth_platform:
+                last_res = self._last_auth_result
+
+        if last_res is not None:
+            dlg = AuthResultDialog(last_res, parent=self)
             dlg.exec()
         else:
-            auth_method = self.settings_manager.get("auth_method", "none")
-            last_status = self.settings_manager.get("last_auth_status", "NOT_CONFIGURED")
-            b_choice = self.settings_manager.get("browser_cookies", "chrome")
-            p_choice = self.settings_manager.get("browser_profile", "Default")
-            c_file = self.settings_manager.get("custom_cookie_file", "")
+            pfx = "douyin_" if self._current_auth_platform == "douyin" else ""
+            auth_method = self.settings_manager.get(f"{pfx}auth_method", "none")
+            last_status = self.settings_manager.get(f"{pfx}last_auth_status", "NOT_CONFIGURED")
+            b_choice = self.settings_manager.get(f"{pfx}browser_cookies", "chrome")
+            p_choice = self.settings_manager.get(f"{pfx}browser_profile", "Default")
+            c_file = self.settings_manager.get(f"{pfx}custom_cookie_file", "")
 
             from downloader.auth_checker import AuthStage
             if auth_method == "none":
                 res = AuthTestResult(
+                    platform=self._current_auth_platform,
                     success=False,
                     stage=AuthStage.BROWSER_DETECTION,
                     status_code=AuthStatusCode.NOT_CONFIGURED,
                     browser_name="None",
                     auth_method="None",
-                    reason=tr("auth_none_hint"),
-                    suggested_action=tr("auth_optional_hint"),
+                    reason=tr("auth_douyin_none_hint") if self._current_auth_platform == "douyin" else tr("auth_none_hint"),
+                    suggested_action=tr("auth_douyin_hint") if self._current_auth_platform == "douyin" else tr("auth_optional_hint"),
                 )
             elif auth_method == "custom_file":
-                v = validate_cookie_file(c_file)
+                v = validate_cookie_file(c_file, platform=self._current_auth_platform)
+                action_hint = tr("auth_click_test_douyin_hint") if self._current_auth_platform == "douyin" else tr("auth_click_test_hint")
                 res = AuthTestResult(
+                    platform=self._current_auth_platform,
                     success=v.get("has_session", False),
                     stage=AuthStage.COOKIE_EXTRACTION,
                     status_code=v.get("status_code", AuthStatusCode.COOKIE_FILE_INVALID),
@@ -1320,10 +1538,12 @@ class SettingsDialog(QDialog):
                     youtube_cookie_count=v.get("youtube_cookie_count", 0),
                     has_session=v.get("has_session", False),
                     reason=v.get("message", ""),
-                    suggested_action=tr("auth_click_test_hint"),
+                    suggested_action=action_hint,
                 )
             else:
+                action_verify_hint = tr("auth_click_test_verify_douyin_hint") if self._current_auth_platform == "douyin" else tr("auth_click_test_verify_hint")
                 res = AuthTestResult(
+                    platform=self._current_auth_platform,
                     success=False,
                     stage=AuthStage.BROWSER_DETECTION,
                     status_code=last_status,
@@ -1331,7 +1551,7 @@ class SettingsDialog(QDialog):
                     auth_method="Browser Cookies",
                     profile_name=p_choice,
                     reason=tr("auth_no_test_yet"),
-                    suggested_action=tr("auth_click_test_verify_hint"),
+                    suggested_action=action_verify_hint,
                 )
             dlg = AuthResultDialog(res, parent=self)
             dlg.exec()
@@ -1398,7 +1618,11 @@ class SettingsDialog(QDialog):
 
         # Auth Section Retranslation
         if hasattr(self, "auth_title"):
-            self.auth_title.setText(tr("settings_auth"))
+            self.auth_title.setText(tr("settings_auth_douyin") if self._current_auth_platform == "douyin" else tr("settings_auth"))
+        if hasattr(self, "auth_platform_lbl"):
+            self.auth_platform_lbl.setText(tr("auth_platform_label"))
+        if hasattr(self, "auth_platform_combo"):
+            self._update_auth_platform_combo_availability()
         if hasattr(self, "auth_method_lbl"):
             self.auth_method_lbl.setText(tr("auth_method_label"))
         if hasattr(self, "auth_none_rb"):
@@ -1408,11 +1632,16 @@ class SettingsDialog(QDialog):
         if hasattr(self, "auth_file_rb"):
             self.auth_file_rb.setText(tr("auth_method_custom_file_radio"))
 
+        # Fallback notice retranslation
+        if hasattr(self, "auth_fallback_notice_lbl") and self.auth_fallback_notice_lbl.isVisible():
+            fallback_m = getattr(self, "_current_fallback_method", "none")
+            self._update_browser_fallback_notice(fallback_m)
+
         # None panel
         if hasattr(self, "none_status_lbl"):
             self.none_status_lbl.setText(f"<b>{tr('auth_status_label')}</b> {tr('status_not_configured')}")
         if hasattr(self, "none_hint_lbl"):
-            self.none_hint_lbl.setText(tr("auth_none_hint"))
+            self.none_hint_lbl.setText(tr("auth_douyin_none_hint") if self._current_auth_platform == "douyin" else tr("auth_none_hint"))
 
         # Browser panel
         if hasattr(self, "browser_lbl"):
@@ -1440,9 +1669,11 @@ class SettingsDialog(QDialog):
         if hasattr(self, "browser_switch_btn"):
             self.browser_switch_btn.setText(tr("auth_switch_to_cookie_file"))
         if hasattr(self, "browser_hint_lbl"):
-            self.browser_hint_lbl.setText(tr("settings_cookies_hint"))
+            self.browser_hint_lbl.setText(tr("auth_douyin_hint") if self._current_auth_platform == "douyin" else tr("settings_cookies_hint"))
 
         # Custom Cookie File panel
+        if hasattr(self, "cookie_file_hint_lbl"):
+            self.cookie_file_hint_lbl.setText(tr("auth_cookie_file_hint"))
         if hasattr(self, "cookie_file_lbl"):
             self.cookie_file_lbl.setText(tr("auth_cookie_file_label"))
         if hasattr(self, "cookie_file_edit"):
@@ -1462,7 +1693,8 @@ class SettingsDialog(QDialog):
         if hasattr(self, "view_auth_diag_btn"):
             self.view_auth_diag_btn.setText(tr("auth_view_diagnostic_details"))
         if hasattr(self, "auth_last_test_lbl"):
-            last_s = self.settings_manager.get("last_auth_status", "NOT_CONFIGURED")
+            pfx = "douyin_" if self._current_auth_platform == "douyin" else ""
+            last_s = self.settings_manager.get(f"{pfx}last_auth_status", "NOT_CONFIGURED")
             self.auth_last_test_lbl.setText(f"<b>{tr('auth_last_test')}</b> {self._format_status_badge(last_s)}")
 
         # Diagnostics

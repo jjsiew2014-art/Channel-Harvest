@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Optional, Tuple, Set, List, Dict, Any
 
 from core.diagnostics import PrivacySanitizer
+from core.paths import get_temp_dir
 from core.version import __version__
 
 
@@ -48,9 +49,11 @@ class AuthStatusCode:
     COOKIE_FILE_VALID = "COOKIE_FILE_VALID"
     COOKIE_FILE_INVALID = "COOKIE_FILE_INVALID"
     YOUTUBE_SESSION_AUTHENTICATED = "YOUTUBE_SESSION_AUTHENTICATED"
+    DOUYIN_SESSION_AUTHENTICATED = "DOUYIN_SESSION_AUTHENTICATED"
     AUTHENTICATION_REQUIRED = "AUTHENTICATION_REQUIRED"
     BOT_VERIFICATION_REQUIRED = "BOT_VERIFICATION_REQUIRED"
     NO_YOUTUBE_COOKIES = "NO_YOUTUBE_COOKIES"
+    NO_DOUYIN_COOKIES = "NO_DOUYIN_COOKIES"
     AUTHENTICATION_TEST_FAILED = "AUTHENTICATION_TEST_FAILED"
     UNKNOWN_AUTHENTICATION_ERROR = "UNKNOWN_AUTHENTICATION_ERROR"
 
@@ -107,6 +110,7 @@ class AuthTestResult:
     browser_running: bool = False
     is_app_bound: bool = False
     timestamp: str = ""
+    platform: str = "youtube"
 
     def __post_init__(self):
         if not self.timestamp:
@@ -146,20 +150,23 @@ class AuthTestResult:
         user_context = PrivacySanitizer.sanitize_message(f"User: {user_name}")
 
         tech_err = PrivacySanitizer.sanitize_message(self.technical_error or self.raw_error or "None")
+        plat_cap = (self.platform or "youtube").capitalize()
+        cookie_domain_label = "Douyin" if self.platform == "douyin" else "YouTube"
 
         lines = [
-            "Channel Harvest Authentication Diagnostic",
+            f"Channel Harvest {'Douyin ' if self.platform == 'douyin' else ''}Authentication Diagnostic",
             "========================================",
             f"Timestamp:              {self.timestamp}",
             f"App Version:            {__version__}",
             f"yt-dlp Version:         {ytdlp_version}",
+            f"Platform:               {plat_cap}",
             f"Authentication Method:  {self.auth_method}",
             f"Browser / Source:       {self.browser_name}",
             f"Browser Profile:        {self.profile_name}",
             f"Stage:                  {self.stage}",
             f"Status Code:            {self.status_code}",
             f"Cookies Extracted:      {self.cookie_count}",
-            f"YouTube Cookies:        {self.youtube_cookie_count}",
+            f"{cookie_domain_label} Cookies:        {self.youtube_cookie_count}",
             f"Session Authenticated:  {'Yes' if self.has_session else 'No'}",
             f"Browser Process Running:{'Yes' if self.browser_running else 'No'}",
             f"Elevation:              {elevation_str}",
@@ -368,10 +375,10 @@ class AuthChecker:
         cls._cookie_file_cache.clear()
 
     @classmethod
-    def validate_cookie_file(cls, file_path_str: Optional[str]) -> Dict[str, Any]:
+    def validate_cookie_file(cls, file_path_str: Optional[str], platform: str = "youtube") -> Dict[str, Any]:
         """
         Performs synchronous, non-destructive validation of an exported cookie file.
-        Checks: file exists, readable, non-empty, Netscape format, and YouTube cookies.
+        Checks: file exists, readable, non-empty, Netscape format, and platform cookies.
         Strict privacy: NEVER returns or logs raw cookie values.
         """
         if not file_path_str or not file_path_str.strip():
@@ -406,7 +413,7 @@ class AuthChecker:
                     "youtube_cookie_count": 0,
                     "has_session": False,
                 }
-            cache_key = str(p.resolve())
+            cache_key = f"{platform}:{p.resolve()}"
             mtime = stat_res.st_mtime
             size = stat_res.st_size
             if cache_key in cls._cookie_file_cache:
@@ -437,6 +444,34 @@ class AuthChecker:
             return res
 
         total_cookies = len(jar)
+
+        if platform == "douyin":
+            dy_cookies = [c for c in jar if "douyin.com" in getattr(c, "domain", "").lower()]
+            dy_count = len(dy_cookies)
+            has_dy_session = any(getattr(c, "name", "") in ("s_v_web_id", "sessionid", "ttwid") for c in dy_cookies)
+            if dy_count == 0:
+                res = {
+                    "is_valid": False,
+                    "status_code": AuthStatusCode.COOKIE_FILE_INVALID,
+                    "message": "Cookie file parsed, but contains no Douyin cookies.",
+                    "cookie_count": total_cookies,
+                    "youtube_cookie_count": 0,
+                    "has_session": False,
+                }
+                cls._cookie_file_cache[cache_key] = (mtime, size, res.copy())
+                return res
+            session_str = "Douyin session detected" if has_dy_session else "Douyin cookies found"
+            res = {
+                "is_valid": True,
+                "status_code": AuthStatusCode.COOKIE_FILE_VALID,
+                "message": f"✓ Cookie file detected ({dy_count} Douyin cookies, {session_str})",
+                "cookie_count": total_cookies,
+                "youtube_cookie_count": dy_count,
+                "has_session": has_dy_session,
+            }
+            cls._cookie_file_cache[cache_key] = (mtime, size, res.copy())
+            return res
+
         yt_cookies, has_session = cls._inspect_youtube_cookies(jar)
         yt_count = len(yt_cookies)
 
@@ -470,6 +505,7 @@ class AuthChecker:
         browser_or_file: str,
         custom_cookie_path: Optional[str] = None,
         profile: Optional[str] = None,
+        platform: str = "youtube",
     ) -> AuthTestResult:
         """
         Runs the full stage-aware test on the selected browser or cookie file.
@@ -477,6 +513,7 @@ class AuthChecker:
         """
         target = (browser_or_file or "").strip()
         if target.lower() in ("none", ""):
+            plat_name = "Douyin" if platform == "douyin" else "YouTube"
             return AuthTestResult(
                 success=True,
                 stage=AuthStage.COMPLETE,
@@ -485,24 +522,25 @@ class AuthChecker:
                 auth_method="None",
                 profile_name="N/A",
                 reason="Authentication is not configured.",
-                suggested_action="Public YouTube downloads will proceed without authentication.",
+                suggested_action=f"Public {plat_name} downloads will proceed without authentication.",
                 technical_error="",
+                platform=platform,
             )
 
         is_custom_file = (target.lower() == "custom_file") or (target.lower().endswith(".txt"))
         effective_file_path = custom_cookie_path if target.lower() == "custom_file" else target
 
         if is_custom_file:
-            return cls._test_cookie_file(effective_file_path)
+            return cls._test_cookie_file(effective_file_path, platform=platform)
         else:
-            return cls._test_browser(target, profile=profile)
+            return cls._test_browser(target, profile=profile, platform=platform)
 
     # -------------------------------------------------------------------------
     # Browser Verification Flow
     # -------------------------------------------------------------------------
 
     @classmethod
-    def _test_browser(cls, browser_name: str, profile: Optional[str] = None) -> AuthTestResult:
+    def _test_browser(cls, browser_name: str, profile: Optional[str] = None, platform: str = "youtube") -> AuthTestResult:
         b_name = browser_name.lower().strip()
         display_name = browser_name.capitalize()
         prof_name = profile or "Default"
@@ -523,6 +561,7 @@ class AuthChecker:
                 reason=f"No installation or user profile directory was found for {display_name} on this computer.",
                 suggested_action=f"Ensure {display_name} is installed and has been run under your Windows user account, or select 'Custom Cookie File (cookies.txt)' in Settings.",
                 technical_error=f"Browser path does not exist: {db_path or 'None'}",
+                platform=platform,
             )
 
         # ---------------------------------------------------------------------
@@ -541,6 +580,7 @@ class AuthChecker:
                     reason=f"The {display_name} cookie database is locked by another process (typically because {display_name} is running).",
                     suggested_action=f"Completely close all {display_name} browser windows and background processes, or use an exported cookies.txt file.",
                     technical_error=lock_err,
+                    platform=platform,
                 )
 
         # ---------------------------------------------------------------------
@@ -559,18 +599,20 @@ class AuthChecker:
                 reason=f"The {display_name} cookie database is locked by Windows while the browser is running.",
                 suggested_action=f"Completely close all {display_name} browser processes, or export cookies to a cookies.txt file.",
                 technical_error=decrypt_err,
+                platform=platform,
             )
 
+        plat_name = "Douyin" if platform == "douyin" else "YouTube"
         if decrypt_err:
             if "Failed to decrypt with DPAPI" in decrypt_err or is_abe:
                 reason_msg = (
                     f"Channel Harvest could not decrypt the cookies stored by {display_name}. "
                     f"Modern Chromium browsers (Chrome 127+, Edge, Brave) utilize App-Bound Encryption, "
                     f"which protects browser cookies from access by external applications. "
-                    f"Your YouTube login may still be working normally in {display_name}."
+                    f"Your {plat_name} login may still be working normally in {display_name}."
                 )
                 suggested_msg = (
-                    f"Recommended solution: Export your YouTube cookies as a cookies.txt file "
+                    f"Recommended solution: Export your {plat_name} cookies as a cookies.txt file "
                     f"(using a browser extension such as 'Get cookies.txt LOCALLY') and select it under Custom Cookie File in Settings."
                 )
                 return AuthTestResult(
@@ -584,6 +626,7 @@ class AuthChecker:
                     reason=reason_msg,
                     suggested_action=suggested_msg,
                     technical_error=decrypt_err,
+                    platform=platform,
                 )
             else:
                 return AuthTestResult(
@@ -596,6 +639,7 @@ class AuthChecker:
                     reason=f"Failed to extract cookies from {display_name}: {decrypt_err}",
                     suggested_action="Verify that the browser profile is accessible and not corrupted, or use a cookies.txt file.",
                     technical_error=decrypt_err,
+                    platform=platform,
                 )
 
         if not jar:
@@ -607,14 +651,56 @@ class AuthChecker:
                 profile_name=prof_name,
                 browser_running=running,
                 reason=f"No cookies could be read from {display_name}.",
-                suggested_action="Check that you are logged into YouTube in this browser profile, or use a cookies.txt file.",
+                suggested_action=f"Check that you are logged into {plat_name} in this browser profile, or use a cookies.txt file.",
                 technical_error="Cookie jar returned empty or None",
+                platform=platform,
             )
 
         # ---------------------------------------------------------------------
-        # STAGE 4: YouTube Cookie Verification
+        # STAGE 4: Cookie Verification
         # ---------------------------------------------------------------------
         total_cookies = len(jar)
+        if platform == "douyin":
+            dy_cookies = [c for c in jar if "douyin.com" in getattr(c, "domain", "").lower()]
+            has_session = any(getattr(c, "name", "") in ("s_v_web_id", "sessionid", "ttwid") for c in dy_cookies)
+            if not dy_cookies:
+                return AuthTestResult(
+                    success=False,
+                    stage="Douyin Cookie Verification",
+                    status_code=AuthStatusCode.NO_DOUYIN_COOKIES,
+                    browser_name=display_name,
+                    profile_name=prof_name,
+                    cookie_count=total_cookies,
+                    youtube_cookie_count=0,
+                    has_session=False,
+                    browser_running=running,
+                    reason=f"{display_name} cookies were loaded, but no Douyin (douyin.com) cookies were found.",
+                    suggested_action=f"Open {display_name}, navigate to https://www.douyin.com, and browse or log in to establish session cookies, then test again.",
+                    technical_error=f"Found {total_cookies} total cookies, 0 for douyin.com",
+                    platform="douyin",
+                )
+            has_uifid = any(getattr(c, "name", "") == "UIFID" for c in dy_cookies)
+            status = AuthStatusCode.DOUYIN_SESSION_AUTHENTICATED if has_session else AuthStatusCode.BROWSER_COOKIE_EXTRACTION_SUCCESS
+            reason_msg = f"{display_name} cookies loaded. {len(dy_cookies)} Douyin cookies found."
+            if not has_uifid:
+                reason_msg += " (Notice: Authenticated device token 'UIFID' not detected; ArgusSecurityPlugin challenge may occur)."
+            action_msg = "Douyin authentication is active. Channel Harvest will use these credentials for Douyin downloads."
+            return AuthTestResult(
+                success=True,
+                stage=AuthStage.COMPLETE,
+                status_code=status,
+                browser_name=display_name,
+                profile_name=prof_name,
+                cookie_count=total_cookies,
+                youtube_cookie_count=len(dy_cookies),
+                has_session=has_session,
+                browser_running=running,
+                reason=reason_msg,
+                suggested_action=action_msg,
+                technical_error="",
+                platform="douyin",
+            )
+
         yt_cookies, has_session = cls._inspect_youtube_cookies(jar)
 
         if not yt_cookies:
@@ -631,6 +717,7 @@ class AuthChecker:
                 reason=f"{display_name} cookies were loaded, but no YouTube or Google cookies were found.",
                 suggested_action=f"Open {display_name}, navigate to https://www.youtube.com, log in to your account, then test again.",
                 technical_error=f"Found {total_cookies} total cookies, 0 for youtube.com/google.com",
+                platform="youtube",
             )
 
         # ---------------------------------------------------------------------
@@ -652,6 +739,7 @@ class AuthChecker:
                 reason="YouTube requested additional verification." if is_bot else "YouTube rejected the authenticated request (cookies may be expired or revoked).",
                 suggested_action="Consider using a valid browser cookie source and retrying later." if is_bot else f"Log in to YouTube again in {display_name} to refresh your session cookies.",
                 technical_error=req_err or "Authenticated YouTube query failed",
+                platform="youtube",
             )
 
         # STAGE COMPLETE: Success!
@@ -677,6 +765,7 @@ class AuthChecker:
             reason=reason_msg,
             suggested_action=action_msg,
             technical_error="",
+            platform="youtube",
         )
 
     # -------------------------------------------------------------------------
@@ -684,7 +773,7 @@ class AuthChecker:
     # -------------------------------------------------------------------------
 
     @classmethod
-    def _test_cookie_file(cls, file_path_str: Optional[str]) -> AuthTestResult:
+    def _test_cookie_file(cls, file_path_str: Optional[str], platform: str = "youtube") -> AuthTestResult:
         disp_name = "Custom Cookie File"
 
         # ---------------------------------------------------------------------
@@ -700,6 +789,7 @@ class AuthChecker:
                 reason="No cookie file path was specified.",
                 suggested_action="Click 'Browse...' in Settings and select a valid exported Netscape-formatted cookies.txt file.",
                 technical_error="Cookie file path is empty",
+                platform=platform,
             )
 
         cookie_path = Path(file_path_str.strip())
@@ -713,6 +803,7 @@ class AuthChecker:
                 reason="The specified cookie file does not exist on disk.",
                 suggested_action="Verify the file path and ensure the cookies.txt file has not been moved or deleted.",
                 technical_error=f"File not found: {cookie_path}",
+                platform=platform,
             )
 
         # ---------------------------------------------------------------------
@@ -731,6 +822,7 @@ class AuthChecker:
                 reason=f"Cannot read cookie file: {e}",
                 suggested_action="Check file permissions and ensure another application does not have the file locked exclusively.",
                 technical_error=str(e),
+                platform=platform,
             )
 
         # ---------------------------------------------------------------------
@@ -747,12 +839,52 @@ class AuthChecker:
                 reason="The selected file is not a valid Netscape-format cookies.txt file.",
                 suggested_action="Export your cookies from your browser using a standard extension (e.g. 'Get cookies.txt LOCALLY') in Netscape format.",
                 technical_error=parse_err or "No valid cookies could be parsed",
+                platform=platform,
             )
 
         # ---------------------------------------------------------------------
-        # STAGE 4: YouTube Cookie Verification
+        # STAGE 4: Cookie Verification
         # ---------------------------------------------------------------------
         total_cookies = len(jar)
+        if platform == "douyin":
+            dy_cookies = [c for c in jar if "douyin.com" in getattr(c, "domain", "").lower()]
+            has_session = any(getattr(c, "name", "") in ("s_v_web_id", "sessionid", "ttwid") for c in dy_cookies)
+            if not dy_cookies:
+                return AuthTestResult(
+                    success=False,
+                    stage="Douyin Cookie Verification",
+                    status_code=AuthStatusCode.COOKIE_FILE_INVALID,
+                    browser_name=disp_name,
+                    profile_name="N/A",
+                    cookie_count=total_cookies,
+                    youtube_cookie_count=0,
+                    has_session=False,
+                    reason="The cookie file was parsed, but contains no Douyin cookies.",
+                    suggested_action="Make sure you were on douyin.com when exporting cookies.",
+                    technical_error=f"Parsed {total_cookies} total cookies, 0 for douyin.com",
+                    platform="douyin",
+                )
+            has_uifid = any(getattr(c, "name", "") == "UIFID" for c in dy_cookies)
+            status = AuthStatusCode.DOUYIN_SESSION_AUTHENTICATED if has_session else AuthStatusCode.COOKIE_FILE_VALID
+            reason_msg = f"Cookie file successfully loaded. {len(dy_cookies)} Douyin cookies found."
+            if not has_uifid:
+                reason_msg += " (Notice: Authenticated device token 'UIFID' not detected; ArgusSecurityPlugin challenge may occur)."
+            action_msg = "Douyin cookie file is active. Channel Harvest will use this cookie file for Douyin downloads."
+            return AuthTestResult(
+                success=True,
+                stage=AuthStage.COMPLETE,
+                status_code=status,
+                browser_name=disp_name,
+                profile_name="N/A",
+                cookie_count=total_cookies,
+                youtube_cookie_count=len(dy_cookies),
+                has_session=has_session,
+                reason=reason_msg,
+                suggested_action=action_msg,
+                technical_error="",
+                platform="douyin",
+            )
+
         yt_cookies, has_session = cls._inspect_youtube_cookies(jar)
 
         if not yt_cookies:
@@ -768,6 +900,7 @@ class AuthChecker:
                 reason="The cookie file was parsed, but contains no YouTube or Google cookies.",
                 suggested_action="Make sure you were logged into YouTube in the browser tab when exporting cookies.",
                 technical_error=f"Parsed {total_cookies} total cookies, 0 for youtube.com",
+                platform="youtube",
             )
 
         # ---------------------------------------------------------------------
@@ -788,6 +921,7 @@ class AuthChecker:
                 reason="YouTube requested additional verification." if is_bot else "YouTube rejected the authenticated request using the provided cookie file.",
                 suggested_action="Consider using a valid browser cookie source and retrying later." if is_bot else "Re-export fresh cookies from an active YouTube browser session.",
                 technical_error=req_err or "Authenticated YouTube query failed",
+                platform="youtube",
             )
 
         # STAGE COMPLETE: Success!
@@ -812,6 +946,7 @@ class AuthChecker:
             reason=reason_msg,
             suggested_action=action_msg,
             technical_error="",
+            platform="youtube",
         )
 
     # -------------------------------------------------------------------------
@@ -897,27 +1032,31 @@ class AuthChecker:
 
     @classmethod
     def _load_cookie_file(cls, cookie_path: Path) -> Tuple[Optional[Any], str]:
-        """Loads a Netscape-formatted cookie file using yt-dlp / MozillaCookieJar."""
-        try:
-            import yt_dlp
-            opts = {
-                "cookiefile": str(cookie_path.resolve()),
-                "quiet": True,
-                "no_warnings": True,
-            }
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                jar = ydl.cookiejar
-                if jar and len(jar) > 0:
-                    return jar, ""
-        except Exception as ex:
-            return None, str(ex)
-
+        """Loads a Netscape-formatted cookie file using fast MozillaCookieJar or yt-dlp fallback."""
+        # 1. Standard library MozillaCookieJar (instant, < 1ms, zero extractor loading overhead)
         try:
             from http.cookiejar import MozillaCookieJar
             cj = MozillaCookieJar(str(cookie_path.resolve()))
             cj.load(ignore_discard=True, ignore_expires=True)
             if len(cj) > 0:
                 return cj, ""
+        except Exception:
+            pass
+
+        # 2. Robust fallback via yt-dlp (with extractors disabled for instant execution)
+        try:
+            import yt_dlp
+            opts = {
+                "cookiefile": str(cookie_path.resolve()),
+                "quiet": True,
+                "no_warnings": True,
+                "extractors": [],
+                "paths": {"temp": str(get_temp_dir())},
+            }
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                jar = ydl.cookiejar
+                if jar and len(jar) > 0:
+                    return jar, ""
         except Exception as ex:
             return None, str(ex)
 
@@ -955,6 +1094,7 @@ class AuthChecker:
                 "no_warnings": True,
                 "skip_download": True,
                 "extract_flat": True,
+                "paths": {"temp": str(get_temp_dir())},
             }
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.cookiejar = jar

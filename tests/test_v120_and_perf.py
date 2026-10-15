@@ -26,24 +26,24 @@ class TestVersion120AndPerf(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication(sys.argv)
 
-    def test_version_number_120(self):
-        """Verify version is exactly 1.2.0."""
-        self.assertEqual(__version__, "1.2.0")
+    def test_version_number(self):
+        """Verify version is exactly 1.3.0."""
+        self.assertEqual(__version__, "1.3.0")
 
         # Verify version_info.txt
         root = Path(__file__).resolve().parent.parent
         vinfo_path = root / "version_info.txt"
         self.assertTrue(vinfo_path.exists())
         vinfo_text = vinfo_path.read_text(encoding="utf-8")
-        self.assertIn("filevers=(1, 2, 0, 0)", vinfo_text)
-        self.assertIn("prodvers=(1, 2, 0, 0)", vinfo_text)
-        self.assertIn("1.2.0.0", vinfo_text)
+        self.assertIn("filevers=(1, 3, 0, 0)", vinfo_text)
+        self.assertIn("prodvers=(1, 3, 0, 0)", vinfo_text)
+        self.assertIn("1.3.0.0", vinfo_text)
 
         # Verify installer script
         iss_path = root / "installer" / "ChannelHarvest.iss"
         self.assertTrue(iss_path.exists())
         iss_text = iss_path.read_text(encoding="utf-8")
-        self.assertIn('#define MyAppVersion "1.2.0"', iss_text)
+        self.assertIn('#define MyAppVersion "1.3.0"', iss_text)
 
     def test_runtime_manager_caching(self):
         """Verify RuntimeManager caches results and invalidate_cache clears it."""
@@ -80,13 +80,14 @@ class TestVersion120AndPerf(unittest.TestCase):
         self.assertIsNone(YtDlpUpdater._cached_version)
 
     def test_settings_dialog_v120_and_no_subtitle(self):
-        """Verify SettingsDialog displays v1.2.0 badge and has no runtime_sub_lbl."""
+        """Verify SettingsDialog displays v1.2.2 badge and has no runtime_sub_lbl."""
         # Preheat runtime cache so dialog opens instantly
         RuntimeManager.get_installed_versions()
 
         dlg = SettingsDialog()
-        self.assertEqual(dlg.APP_VERSION, "v1.2.0")
-        self.assertIn("1.2.0", dlg._ver_badge.text())
+        from core.version import __version__
+        self.assertEqual(dlg.APP_VERSION, f"v{__version__}")
+        self.assertIn(__version__, dlg._ver_badge.text())
 
         # Subtitle should be gone
         self.assertFalse(hasattr(dlg, "runtime_sub_lbl"))
@@ -109,6 +110,23 @@ class TestVersion120AndPerf(unittest.TestCase):
         self.assertEqual(dlg.th_ver.text(), "Current Version")
         self.assertEqual(dlg.th_stat.text(), "Status")
 
+        dlg.close()
+
+    def test_settings_dialog_instant_and_async_cold_start(self):
+        """Verify SettingsDialog opens without freezing even when cache is absent."""
+        RuntimeManager.invalidate_cache()
+        cache_file = RuntimeManager._get_cache_file_path()
+        if cache_file.exists():
+            cache_file.unlink()
+
+        # Construction should be non-blocking and return quickly
+        dlg = SettingsDialog()
+        self.assertIsNotNone(dlg)
+        self.assertIsNotNone(dlg._detect_worker)
+        self.assertTrue(dlg._detect_worker.isRunning())
+
+        # Clean up
+        dlg._detect_worker.wait(10000)
         dlg.close()
 
 

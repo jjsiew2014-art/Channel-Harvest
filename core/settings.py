@@ -44,6 +44,7 @@ class SettingsManager:
         "save_chapters": False,
         "create_channel_folder": True,
         "create_individual_video_folders": False,
+        "include_video_id_in_filename": False,
 
         "skip_existing": False,
         "window_width": 1200,
@@ -51,11 +52,17 @@ class SettingsManager:
         "last_channel_url": "https://www.youtube.com/@PythonSimplified",
         "theme": "System",
         "language": "en",
+        "selected_platform": "youtube",
         "auth_method": "none",
         "browser_cookies": "none",
         "browser_profile": "Default",
         "custom_cookie_file": "",
         "last_auth_status": "NOT_CONFIGURED",
+        "douyin_auth_method": "none",
+        "douyin_browser_cookies": "none",
+        "douyin_browser_profile": "Default",
+        "douyin_custom_cookie_file": "",
+        "douyin_last_auth_status": "NOT_CONFIGURED",
         "auto_check_ytdlp_updates": True,
         "auto_check_runtime_updates": True,
         "last_ytdlp_update_check": 0.0,
@@ -110,8 +117,16 @@ class SettingsManager:
             return False
 
     def get(self, key: str, default: Any = None) -> Any:
-        """Retrieves a setting value by key."""
-        return self._data.get(key, default if default is not None else self.DEFAULT_SETTINGS.get(key))
+        """Retrieves a setting value by key, falling back safely to YouTube if the saved platform is frozen."""
+        val = self._data.get(key, default if default is not None else self.DEFAULT_SETTINGS.get(key))
+        if key == "selected_platform" and val:
+            try:
+                from core.platform.detector import PlatformRegistry
+                if not PlatformRegistry.is_available(str(val)):
+                    return "youtube"
+            except Exception:
+                pass
+        return val
 
     def set(self, key: str, value: Any) -> None:
         """Sets a setting value and saves to disk."""

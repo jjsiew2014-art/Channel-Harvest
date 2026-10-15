@@ -21,6 +21,7 @@ from typing import Dict, Any, Optional, Tuple
 
 from core.version import __version__
 from core.settings import SettingsManager
+from core.paths import get_temp_dir
 
 
 # =============================================================================
@@ -35,6 +36,7 @@ class DiagnosticCategory:
     JS_RUNTIME_ERROR = "JS_RUNTIME_ERROR"
     EJS_ERROR = "EJS_ERROR"
     PO_TOKEN_ERROR = "PO_TOKEN_ERROR"
+    IMPERSONATION_ERROR = "IMPERSONATION_ERROR"
     VIDEO_UNAVAILABLE = "VIDEO_UNAVAILABLE"
     REGION_RESTRICTED = "REGION_RESTRICTED"
     AGE_RESTRICTED = "AGE_RESTRICTED"
@@ -138,16 +140,16 @@ class ErrorTracker:
     }
 
     @classmethod
-    def classify(cls, err_msg: str, default_component: Optional[str] = None) -> Tuple[str, str]:
+    def classify(cls, err_msg: str, default_component: Optional[str] = None, platform: Optional[str] = None) -> Tuple[str, str]:
         """
         Classifies error message into (category, component).
         """
         from core.error_classifier import ErrorClassifier
-        err = ErrorClassifier.classify(err_msg, component=default_component)
+        err = ErrorClassifier.classify(err_msg, component=default_component, platform=platform)
         return err.category, err.component
 
     @classmethod
-    def record_error(cls, error_input: Any, component: Optional[str] = None) -> None:
+    def record_error(cls, error_input: Any, component: Optional[str] = None, platform: Optional[str] = None) -> None:
         """
         Records an error event, categorizes it, and saves it sanitized.
         Accepts either a string error message or a DownloadError instance.
@@ -163,7 +165,7 @@ class ErrorTracker:
             msg_str = str(error_input).strip()
             if not msg_str:
                 return
-            dl_err = ErrorClassifier.classify(msg_str, component=component)
+            dl_err = ErrorClassifier.classify(msg_str, component=component, platform=platform)
 
         sanitized_msg = PrivacySanitizer.sanitize_message(dl_err.user_message or dl_err.raw_error)
 
@@ -236,25 +238,45 @@ class DiagnosticReporter:
         os_display = f"{os_name} {os_release} (Build {os_version})"
 
         # 3. Runtime Versions & Statuses
+        from downloader.runtime_manager import RuntimeManager
         from downloader.updater import YtDlpUpdater
         from downloader.deno_checker import DenoChecker
         from downloader.ffmpeg_checker import FFmpegChecker
+
+        comp_infos = RuntimeManager.get_installed_versions()
+        ytdlp_info = comp_infos.get("ytdlp")
+
+        imp_diag = RuntimeManager.get_impersonation_diagnostic()
+        ytdlp_ver = imp_diag.get("ytdlp_version") or (ytdlp_info.current_version if ytdlp_info else YtDlpUpdater.get_installed_version()) or "Unknown"
+        ytdlp_build = imp_diag.get("ytdlp_build_type") or (ytdlp_info.build_type if ytdlp_info and ytdlp_info.build_type else "Unknown")
+        ytdlp_arch = (ytdlp_info.architecture if ytdlp_info and ytdlp_info.architecture else arch)
+        runtime_type = imp_diag.get("runtime_type") or ("Frozen Standalone" if getattr(sys, "frozen", False) else f"Python {platform.python_version()}")
+        curl_avail_str = "Available" if imp_diag.get("curl_cffi_available") else "Unavailable"
+        curl_ver_str = imp_diag.get("curl_cffi_version") or (ytdlp_info.curl_cffi_version if ytdlp_info else "")
+        imp_state = imp_diag.get("impersonation_state") or "IMPERSONATION_UNAVAILABLE"
+        avail_targets = imp_diag.get("available_targets") or []
+        default_target = imp_diag.get("default_target") or "None"
+
+        ytdlp_curl = f"Available (v{curl_ver_str})" if (curl_avail_str == "Available" and curl_ver_str) else curl_avail_str
+        ytdlp_imp = (ytdlp_info.impersonation if ytdlp_info and ytdlp_info.impersonation else ("Available" if avail_targets else "Unavailable"))
+        ytdlp_impersonation = f"{imp_state} ({len(avail_targets)} targets, default: {default_target})" if avail_targets else imp_state
+
         try:
             import yt_dlp_ejs
             ejs_ver = getattr(yt_dlp_ejs, "__version__", getattr(yt_dlp_ejs, "version", "Unknown"))
         except ImportError:
             ejs_ver = "Not Installed"
 
-        ytdlp_ver = YtDlpUpdater.get_installed_version()
         is_deno_ok, _, deno_ver, _ = DenoChecker.detect()
         is_ffmpeg_ok, _, ffmpeg_ver, _ = FFmpegChecker.detect()
 
         deno_display = f"{deno_ver}" if is_deno_ok else "Not Found"
         ffmpeg_display = f"{ffmpeg_ver}" if is_ffmpeg_ok else "Not Found"
+        ffmpeg_status_str = imp_diag.get("ffmpeg_status") or ("Available" if is_ffmpeg_ok else "Not Found")
 
         # Statuses
         r_statuses = runtime_statuses or {}
-        ytdlp_status = r_statuses.get("yt-dlp", "Up to date" if ytdlp_ver != "Unknown" else "Unknown")
+        ytdlp_status = (ytdlp_info.status if ytdlp_info and ytdlp_info.status else r_statuses.get("yt-dlp", "Up to date" if ytdlp_ver != "Unknown" else "Unknown"))
         ejs_status = r_statuses.get("ejs", "Up to date" if ejs_ver != "Not Installed" else "Not Installed")
         deno_status = r_statuses.get("deno", "Up to date" if is_deno_ok else "Not Found")
         ffmpeg_status = r_statuses.get("ffmpeg", "Up to date" if is_ffmpeg_ok else "Not Found")
@@ -279,6 +301,14 @@ class DiagnosticReporter:
         err_time = last_err.get("timestamp") or "N/A"
         err_msg = last_err.get("message", "None")
 
+        # Format targets summary
+        targets_summary = f"{len(avail_targets)} available"
+        if avail_targets:
+            targets_sample = ", ".join(avail_targets[:6])
+            if len(avail_targets) > 6:
+                targets_sample += f" ... (+{len(avail_targets) - 6} more)"
+            targets_summary = f"{len(avail_targets)} targets ({targets_sample})"
+
         # Assemble clean text
         lines = [
             "Channel Harvest Diagnostic Report",
@@ -290,18 +320,31 @@ class DiagnosticReporter:
             "System",
             f"OS: {os_display}",
             f"Architecture: {arch}",
+            f"Working Directory: {PrivacySanitizer.sanitize_message(str(Path.cwd().resolve()))}",
+            f"Temporary Directory: {PrivacySanitizer.sanitize_message(str(get_temp_dir()))}",
             "",
             "Runtime",
-            f"yt-dlp: {ytdlp_ver}",
+            "yt-dlp:",
+            f"  Version: {ytdlp_ver}",
+            f"  Build: {ytdlp_build}",
+            f"  Architecture: {ytdlp_arch}",
+            f"  Runtime Type: {runtime_type}",
+            f"  curl_cffi: {ytdlp_curl}",
+            f"  curl_cffi Version: {curl_ver_str or 'N/A'}",
+            f"  Impersonation State: {imp_state}",
+            f"  Impersonation Targets: {targets_summary}",
+            f"  Default Target: {default_target}",
+            f"  Status: {ytdlp_status}",
             f"EJS: {ejs_ver}",
             f"Deno: {deno_display}",
-            f"FFmpeg: {ffmpeg_display}",
+            f"FFmpeg: {ffmpeg_display} ({ffmpeg_status_str})",
             "",
             "Runtime Status",
             f"yt-dlp: {ytdlp_status}",
             f"EJS: {ejs_status}",
             f"Deno: {deno_status}",
             f"FFmpeg: {ffmpeg_status}",
+            f"Impersonation: {ytdlp_imp}",
             "",
             "Configuration",
             f"Download Mode: {mode}",

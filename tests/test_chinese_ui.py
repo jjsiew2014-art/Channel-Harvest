@@ -109,7 +109,7 @@ class TestChineseUITranslations(unittest.TestCase):
         self.assertEqual(tr("label_mode"), "下载内容")
         self.assertEqual(tr("label_resolution"), "视频分辨率")
         self.assertEqual(tr("label_audio_bitrate"), "音频质量")
-        self.assertEqual(tr("subsection_assets"), "其他内容")
+        self.assertEqual(tr("subsection_assets"), "附加内容")
         self.assertEqual(tr("label_thumb_format"), "封面格式")
         self.assertEqual(tr("subgroup_info_files"), "视频信息")
         self.assertEqual(tr("cb_save_meta"), "保存元数据")
@@ -127,10 +127,17 @@ class TestChineseUITranslations(unittest.TestCase):
         self.assertEqual(tr("auth_test_btn"), "测试登录")
 
         # Dropdowns
+        self.assertEqual(I18nManager.get_mode_label("Assets Only"), "仅附加内容")
+        self.assertEqual(I18nManager.get_mode_label("Subtitle Only"), "仅附加内容")
         self.assertEqual(I18nManager.get_quality_label("Best Available"), "最高分辨率")
         self.assertEqual(I18nManager.get_video_bitrate_label("Best Available"), "最高画质")
         self.assertEqual(I18nManager.get_audio_bitrate_label("Best Available"), "最高音质")
         self.assertEqual(I18nManager.get_bitrate_label("Best Available"), "最高画质")
+
+        I18nManager.set_language("en")
+        self.assertEqual(I18nManager.get_mode_label("Assets Only"), "Assets Only")
+        self.assertEqual(I18nManager.get_mode_label("Subtitle Only"), "Assets Only")
+        I18nManager.set_language("zh_CN")
 
     def test_font_family_switching(self):
         """Verify dynamic font switching uses Noto Sans SC for Chinese and Segoe UI for English."""
