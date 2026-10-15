@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>A modern, high-performance YouTube & TikTok media and creator downloader</strong><br/>
+  <strong>YouTube & TikTok media and creator downloader</strong><br/>
   Harvest channels and creator profiles. Keep every video — with full media, subtitles, thumbnails, and metadata archival.<br/>
   Built with Python, PySide6 (Qt for Python), yt-dlp, Deno, and FFmpeg.
 </p>
