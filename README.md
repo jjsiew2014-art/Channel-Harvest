@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>A modern, high-performance YouTube & TikTok media and creator downloader</strong><br/>
-  Harvest channels and profiles. Keep every video — with full media, subtitles, thumbnails, and metadata archival.<br/>
+  Harvest channels and creator profiles. Keep every video — with full media, subtitles, thumbnails, and metadata archival.<br/>
   Built with Python, PySide6 (Qt for Python), yt-dlp, Deno, and FFmpeg.
 </p>
 
@@ -17,81 +17,62 @@
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-F59E0B?style=flat-square"/>
 </p>
 
-
 ---
 
 ## 🌟 Key Features
 
-<<<<<<< HEAD
-* **High-Speed Channel & Playlist Scanning**: Fast metadata extraction without UI freezes, featuring real-time title search and multi-select queue controls.
-* **Flexible Download Modes**:
-  * **Video + Audio**: High-definition video with crystal-clear merged audio.
-  * **Video Only**: Standalone high-resolution video streams.
-  * **Audio Only**: Pristine standalone audio extracted with customizable bitrates.
-  * **Subtitle Only**: Standalone subtitle and caption extraction in seconds without downloading media streams.
-* **Intelligent Subtitle & Caption Extraction**:
-  * Automatically detects official manual subtitles and auto-generated captions across multiple languages (Chinese, English, Malay, Japanese, Korean, or All).
-  * Automatically converts tracks to standard SubRip (`.srt`) format via bundled FFmpeg with clean player-friendly filename matching.
-* **YouTube Thumbnail Archival**: Download video thumbnails as separate image files in JPG, PNG, WEBP, or native source format matching media filenames without container embedding.
-* **Comprehensive Metadata, Description & Chapters Archival**:
-  * **Save Description**: Exports raw video descriptions to clean `.description` text files preserving line breaks and links.
-  * **Save Metadata**: Converts complete video metadata into a structured, human-readable `.metadata.txt` record.
-  * **Save Chapters**: Extracts timestamped chapter navigation markers into clean `.chapters.txt` files.
-* **Individual Video Folder Organization**: Optionally organizes each video and all its related assets into its own dedicated subfolder with automatic duplicate title collision protection.
-* * **EJS & Deno JavaScript Challenge Solver**:
-=======
-* **Multi-Platform Support (YouTube & TikTok)**:
-  * **Dedicated Platform Selector**: Easily switch between supported platforms right from the top navigation bar.
-  * **TikTok Video & Creator Archival**:
-    * Full support for TikTok video URLs (`tiktok.com/@user/video/...`, `vt.tiktok.com/...`, `vm.tiktok.com/...`) and creator profile URLs (`tiktok.com/@username`).
-    * High-speed profile batch scanning and metadata retrieval.
-    * High-definition, watermark-free video downloads (MP4, MOV).
-    * Standalone audio extraction (WAV, MP3, M4A, FLAC, AAC, OPUS).
-    * Complete asset archival: native covers/thumbnails (`.jpg`, `.png`, `.webp`), raw descriptions (`.description`), and structured metadata records (`.metadata.txt`).
-  * **Extensible Platform Architecture**: Platform-specific adapters with decoupled capability flags, URL auto-detection, and strictly scoped authentication configurations.
-* **EJS & Deno JavaScript Challenge Solver**:
-  * Bundles a dedicated modern JavaScript runtime engine (`deno.exe`) directly in `runtime/` to solve YouTube's latest client-side signature decryption (n-sig challenge) and Embedded JavaScript (EJS) player routines without external Node.js or Deno installations.
-  * Completely resolves YouTube download throttling, signature calculation failures, and HTTP 403 Forbidden errors.
-* **Centralized Runtime Manager**:
-  * Real-time visual status dashboard integrated into Settings to inspect operational readiness, paths, and versions of all core components: `yt-dlp`, `EJS` (JavaScript Engine), `Deno`, and `FFmpeg`.
-  * Features an asynchronous in-app background updater for `yt-dlp` requiring zero administrator privileges, backed by multi-level version caching for instantaneous dialog response.
-* **Platform-Scoped Authentication & Cookie Management**:
-  * Independent, platform-isolated authentication configurations ensuring credentials never leak between platforms.
-  * Supports custom Netscape format `cookies.txt` files with automated syntax validation, expiration warnings, and security sanitization.
-  * Direct browser cookie extraction integration with Windows DPAPI safety diagnostics.
-  * Live authentication verification tool to test login and premium access status before starting batch downloads.
-  * Unlocks age-restricted content, private playlists, members-only uploads, and unlisted high-definition streams.
-* **Customizable File Naming & Organization**:
-  * **Optional Video ID in Filename**: Choose between clean video title filenames (e.g. `Song Title.mov`) or appending unique IDs (e.g. `Song Title [dQw4w9WgXcQ].mov`).
-  * **Automatic Collision Protection**: Detects duplicate titles and protects against accidental overwrites.
-  * **Individual Video Folder Organization**: Optionally organizes each video and all its related assets (media, `.srt`, thumbnail, `.description`, `.metadata.txt`, `.chapters.txt`) into its own dedicated subfolder.
-* **Diagnostic Report & Troubleshooting**:
-  * One-click system diagnostic generator compiling hardware architecture, Windows OS build, Python runtime, component versions, network connectivity, and cookie authentication status.
-  * Dedicated "Copy Information" button to paste formatted diagnostic reports directly into GitHub Issues for rapid debugging.
-  * Direct "Open Log Folder" shortcut to instantly access `%APPDATA%\ChannelHarvest\logs` and sanitized `channel_harvest_error.log`.
-<<<<<<< HEAD
-* **Windows Taskbar Progress**: Real-time download progress tracking rendered directly on the Windows taskbar application icon with dynamic color status.
-=======
-* **High-Speed Channel, Playlist & Profile Scanning**: Fast metadata extraction without UI freezes, featuring real-time title search and multi-select queue controls.
-* **Flexible Download Modes**:
-  * **Video + Audio**: High-definition video with crystal-clear merged audio (MOV, MP4, MKV, WEBM).
-  * **Video Only**: Standalone high-resolution video streams.
-  * **Audio Only**: Pristine standalone audio extracted into WAV, MP3, M4A, FLAC, AAC, or OPUS with customizable bitrates.
-  * **Assets Only**: Standalone subtitle, thumbnail, and metadata asset extraction in seconds without downloading media streams.
+### 🌐 Multi-Platform Support (YouTube & TikTok)
+* **Dedicated Platform Selector**: Easily switch between supported platforms right from the top navigation bar with adaptive URL placeholder cues.
+* **TikTok Video & Creator Archival**:
+  * Full support for TikTok video URLs (`tiktok.com/@user/video/...`, `vt.tiktok.com/...`, `vm.tiktok.com/...`) and creator profile URLs (`tiktok.com/@username`).
+  * High-speed profile batch scanning and metadata retrieval without UI freezes.
+  * High-definition, watermark-free video downloads (MP4, MOV).
+  * Standalone audio extraction (WAV, MP3, M4A, FLAC, AAC, OPUS).
+  * Complete asset archival: native covers/thumbnails (`.jpg`, `.png`, `.webp`), raw descriptions (`.description`), and structured metadata records (`.metadata.txt`).
+* **Extensible Multi-Platform Architecture (`core/platform/`)**: Modular platform adapters with isolated capability flags, URL auto-detection, and strictly scoped authentication configurations.
+
+### ⚡ EJS & Deno JavaScript Challenge Solver
+* **Modern Challenge Solver**: Bundles a dedicated modern JavaScript runtime engine (`deno.exe`) directly in `runtime/` to solve YouTube's latest client-side signature decryption (`n-sig` challenge) and Embedded JavaScript (`EJS`) player routines without requiring external Node.js or Deno installations.
+* **Zero Throttling & 403 Recovery**: Completely resolves YouTube download throttling, signature calculation failures, and HTTP 403 Forbidden errors.
+
+### 🎛️ Flexible Download Modes
+* **Video + Audio**: High-definition video with crystal-clear merged audio (MOV, MP4, MKV, WEBM).
+* **Video Only**: Standalone high-resolution video streams.
+* **Audio Only**: Pristine standalone audio extracted into WAV, MP3, M4A, FLAC, AAC, or OPUS with customizable bitrates.
+* **Assets Only**: Standalone subtitle, thumbnail/cover, and metadata asset extraction in seconds without downloading media streams.
+
+### 📝 Comprehensive Subtitles, Thumbnails & Metadata Archival
 * **Intelligent Subtitle & Caption Extraction**:
   * Automatically detects official manual subtitles and auto-generated captions across multiple languages (Chinese, English, Malay, Japanese, Korean, or All).
   * Automatically converts tracks to standard SubRip (`.srt`) format via bundled FFmpeg with clean player-friendly filename matching.
 * **Thumbnail & Cover Archival**: Download video thumbnails and TikTok covers as separate image files in JPG, PNG, WEBP, or native source format matching media filenames without container embedding.
-* **Comprehensive Metadata, Description & Chapters Archival**:
-  * **Save Description**: Exports raw video descriptions to clean `.description` text files preserving line breaks and links.
-  * **Save Metadata**: Converts complete video metadata into a structured, human-readable `.metadata.txt` record (statistics, tags, uploader info).
-  * **Save Chapters**: Extracts timestamped chapter navigation markers into clean `.chapters.txt` files (YouTube).
+* **Raw Descriptions**: Exports raw video descriptions to clean `.description` text files preserving line breaks and links.
+* **Structured Metadata**: Converts complete video metadata into a structured, human-readable `.metadata.txt` record (statistics, tags, uploader info).
+* **Chapter Extraction**: Extracts timestamped chapter navigation markers into clean `.chapters.txt` files (YouTube).
+
+### 🏷️ Customizable File Naming & Organization
+* **Clean Filenames by Default**: Media, subtitles, thumbnails, and metadata default to clean video titles (e.g. `Song Title.mov`) rather than forcing video IDs.
+* **Optional Video ID in Filename**: Enable `Include Video ID in filename` (Chinese: `文件名包含 Video ID`) under **Download Option → File Organization** to append `[<id>]`.
+* **Automatic Collision Protection**: Detects duplicate titles and protects against accidental overwrites by safely appending `[<id>]` only when necessary.
+* **Individual Video Folder Organization**: Optionally organizes each video and all its related assets into its own dedicated subfolder.
+
+### 🔒 Platform-Scoped Authentication & Cookie Management
+* **Platform Isolation**: Authentication credentials and profiles are strictly scoped per platform to prevent credential leakage across platforms.
+* **Custom Cookie File Support**: Supports Netscape format `cookies.txt` files with automated syntax validation, expiration warnings, and security sanitization.
+* **Direct Browser Cookie Extraction**: Direct extraction support with Windows DPAPI safety diagnostics.
+* **Live Authentication Verification**: Test login and premium status before starting batch downloads.
+* **Unrestricted Content Access**: Unlocks age-restricted videos, private playlists, members-only uploads, and unlisted high-definition streams.
+
+### ⚙️ Centralized Runtime Manager & Diagnostics
+* **Component Health Dashboard**: Real-time visual status dashboard integrated into Settings to inspect operational readiness, paths, and versions of all core components: `yt-dlp`, `EJS` (JavaScript Engine), `Deno`, and `FFmpeg`.
+* **In-App Updater**: Asynchronous background updater for `yt-dlp` requiring zero administrator privileges, backed by multi-level version caching for instantaneous dialog response (~140ms).
+* **One-Click System Diagnostics**: Collects hardware architecture, Windows OS build, Python runtime, component versions, network connectivity, and cookie configuration for rapid debugging.
+* **Dedicated Sanitized Error Logging**: Unhandled exceptions and background failures are recorded in `channel_harvest_error.log` with automatic privacy scrubbing, paired with an intelligent error classifier providing human-readable advice.
+
+### 🖥️ Polished Windows Desktop UI & Resiliency
 * **Windows Taskbar Progress (ITaskbarList3)**: Real-time download progress tracking rendered directly on the Windows taskbar application icon with dynamic color status (green for active, yellow for paused, red for errors).
->>>>>>> ba8bf06 (TikTok Update)
-* **Smart Error Classification & Actionable Guidance**: Intelligent error classifier analyzing download failures into human-readable diagnoses with clear, actionable solutions and dedicated error log recording.
-* **Independent Skip Verification**: Intelligently skips already-downloaded files, allowing you to fetch missing subtitles, thumbnails, or metadata for existing local archives without re-downloading media streams.
-* **Bilingual Language Support**: Switch dynamically between English and Simplified Chinese directly from Settings, updating all labels, dialogs, and controls in real time without restart.
-* **Polished Modern Windows UI**: Desktop-first design featuring native Dark and Light theme switching, balanced settings layout, ergonomic vector action buttons, and instantaneous settings dialog opening.
+* **Bilingual Language Support (English & 简体中文)**: Switch dynamically between English and Simplified Chinese directly from Settings, updating all labels, dialogs, and controls in real time without restart.
+* **Polished Desktop Experience**: Desktop-first design featuring native Dark and Light theme switching, balanced settings layout, ergonomic vector action buttons, and fast UI responsiveness.
 * **Queue & Resiliency Management**: Full control to pause, resume, or cancel active downloads, backed by automatic 3x retries on transient network failures.
 
 ---
@@ -100,20 +81,12 @@
 
 Visit the [GitHub Releases](https://github.com/jjsiew2014-art/ChannelHarvest/releases) page to download the latest release for **Windows 10 / 11 (64-bit)**:
 
-### 1. Windows Installer (Recommended)
-* **File**: `ChannelHarvest-Setup-v1.3.0.exe`
-* **Features**:
-  * Clean standard Windows installer (built with Inno Setup).
-  * Installs into `Program Files\Channel Harvest` (or user profile for non-admin).
-  * Creates Start Menu and optional Desktop shortcuts.
-  * Registers in Windows *Settings > Installed apps* with a clean uninstaller.
+| Package | File | Description |
+| :--- | :--- | :--- |
+| **Windows Installer** (Recommended) | `ChannelHarvest-Setup-v1.3.0.exe` | Standard setup wizard (Inno Setup) with desktop shortcuts and uninstaller |
+| **Standalone Portable ZIP** | `ChannelHarvest-Portable-v1.3.0.zip` | Zero installation — extract anywhere and run `ChannelHarvest.exe` |
 
-### 2. Standalone Portable ZIP
-* **File**: `ChannelHarvest-Portable-v1.3.0.zip`
-* **Features**:
-  * Zero installation required.
-  * Extract anywhere and double-click `ChannelHarvest.exe`.
-  * Fully self-contained with bundled `runtime/` binaries (`ffmpeg.exe`, `ffprobe.exe`, `deno.exe`, `yt-dlp.exe`).
+Both packages are fully self-contained with bundled `runtime/` binaries (`ffmpeg.exe`, `ffprobe.exe`, `deno.exe`, `yt-dlp.exe`).
 
 ---
 
@@ -126,8 +99,10 @@ Because Channel Harvest is an open-source tool and not signed with an expensive 
 3. Click **"Run anyway"**.
 
 You can verify the SHA-256 integrity hash of your downloaded file against `SHA256SUMS.txt` published on the GitHub Releases page:
+
 ```powershell
 Get-FileHash ChannelHarvest-Setup-v1.3.0.exe -Algorithm SHA256
+Get-FileHash ChannelHarvest-Portable-v1.3.0.zip -Algorithm SHA256
 ```
 
 ---
