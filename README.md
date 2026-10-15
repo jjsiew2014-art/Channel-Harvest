@@ -50,7 +50,6 @@
     * Complete asset archival: native covers/thumbnails (`.jpg`, `.png`, `.webp`), raw descriptions (`.description`), and structured metadata records (`.metadata.txt`).
   * **Extensible Platform Architecture**: Platform-specific adapters with decoupled capability flags, URL auto-detection, and strictly scoped authentication configurations.
 * **EJS & Deno JavaScript Challenge Solver**:
->>>>>>> ba8bf06 (TikTok Update)
   * Bundles a dedicated modern JavaScript runtime engine (`deno.exe`) directly in `runtime/` to solve YouTube's latest client-side signature decryption (n-sig challenge) and Embedded JavaScript (EJS) player routines without external Node.js or Deno installations.
   * Completely resolves YouTube download throttling, signature calculation failures, and HTTP 403 Forbidden errors.
 * **Centralized Runtime Manager**:
