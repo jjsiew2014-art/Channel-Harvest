@@ -51,8 +51,8 @@
 * **Chapter Extraction**: Extracts timestamped chapter navigation markers into clean `.chapters.txt` files (YouTube).
 
 ### 🏷️ Customizable File Naming & Organization
-* **Clean Filenames by Default**: Media, subtitles, thumbnails, and metadata default to clean video titles (e.g. `Song Title.mov`) rather than forcing video IDs.
-* **Optional Video ID in Filename**: Enable `Include Video ID in filename` (Chinese: `文件名包含 Video ID`) under **Download Option → File Organization** to append `[<id>]`.
+* **Clean Filenames by Default**: Media, subtitles, thumbnails, and metadata default to clean video titles rather than forcing video IDs.
+* **Optional Video ID in Filename**: Enable `Include Video ID in filename` under **Download Option → File Organization** to append `[<id>]`.
 * **Automatic Collision Protection**: Detects duplicate titles and protects against accidental overwrites by safely appending `[<id>]` only when necessary.
 * **Individual Video Folder Organization**: Optionally organizes each video and all its related assets into its own dedicated subfolder.
 
@@ -64,14 +64,14 @@
 * **Unrestricted Content Access**: Unlocks age-restricted videos, private playlists, members-only uploads, and unlisted high-definition streams.
 
 ### ⚙️ Centralized Runtime Manager & Diagnostics
-* **Component Health Dashboard**: Real-time visual status dashboard integrated into Settings to inspect operational readiness, paths, and versions of all core components: `yt-dlp`, `EJS` (JavaScript Engine), `Deno`, and `FFmpeg`.
-* **In-App Updater**: Asynchronous background updater for `yt-dlp` requiring zero administrator privileges, backed by multi-level version caching for instantaneous dialog response (~140ms).
+* **Component Health Dashboard**: Real-time visual status dashboard integrated into Settings to inspect operational readiness, paths, and versions of all core components.
+* **In-App Updater**: Asynchronous background updater for `yt-dlp` requiring zero administrator privileges, backed by multi-level version caching for instantaneous dialog response.
 * **One-Click System Diagnostics**: Collects hardware architecture, Windows OS build, Python runtime, component versions, network connectivity, and cookie configuration for rapid debugging.
-* **Dedicated Sanitized Error Logging**: Unhandled exceptions and background failures are recorded in `channel_harvest_error.log` with automatic privacy scrubbing, paired with an intelligent error classifier providing human-readable advice.
+* **Dedicated Sanitized Error Logging**: Unhandled exceptions and background failures are recorded in `channel_harvest_error.log` with automatic privacy scrubbing, paired with an intelligent error classifier.
 
 ### 🖥️ Polished Windows Desktop UI & Resiliency
-* **Windows Taskbar Progress (ITaskbarList3)**: Real-time download progress tracking rendered directly on the Windows taskbar application icon with dynamic color status (green for active, yellow for paused, red for errors).
-* **Bilingual Language Support (English & 简体中文)**: Switch dynamically between English and Simplified Chinese directly from Settings, updating all labels, dialogs, and controls in real time without restart.
+* **Windows Taskbar Progress**: Real-time download progress tracking rendered directly on the Windows taskbar application icon with dynamic color status (green for active, yellow for paused, red for errors).
+* **Bilingual Language Support**: Switch dynamically between English, Traditional Chinese and Simplified Chinese directly from Settings, updating all labels, dialogs, and controls in real time without restart.
 * **Polished Desktop Experience**: Desktop-first design featuring native Dark and Light theme switching, balanced settings layout, ergonomic vector action buttons, and fast UI responsiveness.
 * **Queue & Resiliency Management**: Full control to pause, resume, or cancel active downloads, backed by automatic 3x retries on transient network failures.
 
