@@ -5,13 +5,13 @@
 </p>
 
 <p align="center">
-  <strong>YouTube & TikTok media and creator downloader</strong><br/>
+  <strong>YouTube, TikTok & Bilibili media and creator downloader</strong><br/>
   Harvest channels and creator profiles. Keep every video — with full media, subtitles, thumbnails, and metadata archival.<br/>
   Built with Python, PySide6 (Qt for Python), yt-dlp, Deno, and FFmpeg.
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.3.0-6C63FF?style=flat-square"/>
+  <img alt="Version" src="https://img.shields.io/badge/version-1.4.0-6C63FF?style=flat-square"/>
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-blue?style=flat-square"/>
   <img alt="License" src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square"/>
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-F59E0B?style=flat-square"/>
@@ -21,14 +21,21 @@
 
 ## 🌟 Key Features
 
-### 🌐 Multi-Platform Support (YouTube & TikTok)
-* **Dedicated Platform Selector**: Easily switch between supported platforms right from the top navigation bar with adaptive URL placeholder cues.
+### 🌐 Multi-Platform Support (YouTube, TikTok & Bilibili)
+* **Dedicated Platform Selector**: Easily switch between supported platforms (YouTube, TikTok, and Bilibili) right from the top navigation bar with adaptive URL placeholder cues.
 * **TikTok Video & Creator Archival**:
   * Full support for TikTok video URLs (`tiktok.com/@user/video/...`, `vt.tiktok.com/...`, `vm.tiktok.com/...`) and creator profile URLs (`tiktok.com/@username`).
   * High-speed profile batch scanning and metadata retrieval without UI freezes.
   * High-definition, watermark-free video downloads (MP4, MOV).
   * Standalone audio extraction (WAV, MP3, M4A, FLAC, AAC, OPUS).
   * Complete asset archival: native covers/thumbnails (`.jpg`, `.png`, `.webp`), raw descriptions (`.description`), and structured metadata records (`.metadata.txt`).
+* **Bilibili Video, Multi-Part & Space Archival (哔哩哔哩)**:
+  * Full support for Bilibili video URLs (`bilibili.com/video/BV...` / `av...`), multi-part (分P) episodes with clean part preservation, creator Space URLs (`space.bilibili.com/{mid}`), user video submissions, and media lists/series.
+  * Real-time metadata scanning displaying the actual video title returned by Bilibili instead of generic fallback identifiers.
+  * Anti-crawler & Wbi request signing protection with platform-scoped custom Cookie file (`cookies.txt`) authentication to prevent server rejection (Error 352).
+  * High-definition video downloads (MP4, MKV) up to 1080P/4K 60fps (when authenticated with VIP/member cookies).
+  * Standalone audio extraction (WAV, MP3, M4A, FLAC, AAC, OPUS).
+  * Complete asset archival: native high-resolution covers (`.jpg`, `.png`, `.webp`), raw descriptions (`.description`), and dedicated Bilibili structured metadata records (`.metadata.txt`).
 * **Extensible Multi-Platform Architecture (`core/platform/`)**: Modular platform adapters with isolated capability flags, URL auto-detection, and strictly scoped authentication configurations.
 
 ### ⚡ EJS & Deno JavaScript Challenge Solver
@@ -101,8 +108,8 @@ Because Channel Harvest is an open-source tool and not signed with an expensive 
 You can verify the SHA-256 integrity hash of your downloaded file against `SHA256SUMS.txt` published on the GitHub Releases page:
 
 ```powershell
-Get-FileHash ChannelHarvest-Setup-v1.3.0.exe -Algorithm SHA256
-Get-FileHash ChannelHarvest-Portable-v1.3.0.zip -Algorithm SHA256
+Get-FileHash ChannelHarvest-Setup-v1.4.0.exe -Algorithm SHA256
+Get-FileHash ChannelHarvest-Portable-v1.4.0.zip -Algorithm SHA256
 ```
 
 ---
