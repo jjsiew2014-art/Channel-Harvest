@@ -28,18 +28,18 @@
   * High-speed profile batch scanning and metadata retrieval without UI freezes.
   * High-definition, watermark-free video downloads (MP4, MOV).
   * Standalone audio extraction (WAV, MP3, M4A, FLAC, AAC, OPUS).
-  * Complete asset archival: native covers/thumbnails (`.jpg`, `.png`, `.webp`), raw descriptions (`.description`), and structured metadata records (`.metadata.txt`).
+  * Complete asset archival: native covers/thumbnails, raw descriptions, and structured metadata records.
 * **Bilibili Video, Multi-Part & Space Archival (哔哩哔哩)**:
   * Full support for Bilibili video URLs (`bilibili.com/video/BV...` / `av...`), multi-part (分P) episodes with clean part preservation, creator Space URLs (`space.bilibili.com/{mid}`), user video submissions, and media lists/series.
   * Real-time metadata scanning displaying the actual video title returned by Bilibili instead of generic fallback identifiers.
-  * Anti-crawler & Wbi request signing protection with platform-scoped custom Cookie file (`cookies.txt`) authentication to prevent server rejection (Error 352).
+  * Anti-crawler & Wbi request signing protection with platform-scoped custom Cookie file authentication to prevent server rejection (Error 352).
   * High-definition video downloads (MP4, MKV) up to 1080P/4K 60fps (when authenticated with VIP/member cookies).
   * Standalone audio extraction (WAV, MP3, M4A, FLAC, AAC, OPUS).
-  * Complete asset archival: native high-resolution covers (`.jpg`, `.png`, `.webp`), raw descriptions (`.description`), and dedicated Bilibili structured metadata records (`.metadata.txt`).
-* **Extensible Multi-Platform Architecture (`core/platform/`)**: Modular platform adapters with isolated capability flags, URL auto-detection, and strictly scoped authentication configurations.
+  * Complete asset archival: native high-resolution covers, raw descriptions, and dedicated Bilibili structured metadata records.
+* **Extensible Multi-Platform Architecture**: Modular platform adapters with isolated capability flags, URL auto-detection, and strictly scoped authentication configurations.
 
 ### ⚡ EJS & Deno JavaScript Challenge Solver
-* **Modern Challenge Solver**: Bundles a dedicated modern JavaScript runtime engine (`deno.exe`) directly in `runtime/` to solve YouTube's latest client-side signature decryption (`n-sig` challenge) and Embedded JavaScript (`EJS`) player routines without requiring external Node.js or Deno installations.
+* **Modern Challenge Solver**: Bundles a dedicated modern JavaScript runtime engine to solve YouTube's latest client-side signature decryption and Embedded JavaScript player routines without requiring external Node.js or Deno installations.
 * **Zero Throttling & 403 Recovery**: Completely resolves YouTube download throttling, signature calculation failures, and HTTP 403 Forbidden errors.
 
 ### 🎛️ Flexible Download Modes
@@ -54,7 +54,7 @@
   * Automatically converts tracks to standard SubRip (`.srt`) format via bundled FFmpeg with clean player-friendly filename matching.
 * **Thumbnail & Cover Archival**: Download video thumbnails and TikTok covers as separate image files in JPG, PNG, WEBP, or native source format matching media filenames without container embedding.
 * **Raw Descriptions**: Exports raw video descriptions to clean `.description` text files preserving line breaks and links.
-* **Structured Metadata**: Converts complete video metadata into a structured, human-readable `.metadata.txt` record (statistics, tags, uploader info).
+* **Structured Metadata**: Converts complete video metadata into a structured `.metadata.txt` record.
 * **Chapter Extraction**: Extracts timestamped chapter navigation markers into clean `.chapters.txt` files (YouTube).
 
 ### 🏷️ Customizable File Naming & Organization
@@ -90,8 +90,8 @@ Visit the [GitHub Releases](https://github.com/jjsiew2014-art/ChannelHarvest/rel
 
 | Package | File | Description |
 | :--- | :--- | :--- |
-| **Windows Installer** (Recommended) | `ChannelHarvest-Setup-v1.3.0.exe` | Standard setup wizard (Inno Setup) with desktop shortcuts and uninstaller |
-| **Standalone Portable ZIP** | `ChannelHarvest-Portable-v1.3.0.zip` | Zero installation — extract anywhere and run `ChannelHarvest.exe` |
+| **Windows Installer** (Recommended) | `ChannelHarvest-Setup-v1.3.2.exe` | Standard setup wizard |
+| **Standalone Portable ZIP** | `ChannelHarvest-Portable-v1.3.2.zip` | Zero installation — extract and run anywhere |
 
 Both packages are fully self-contained with bundled `runtime/` binaries (`ffmpeg.exe`, `ffprobe.exe`, `deno.exe`, `yt-dlp.exe`).
 
@@ -108,8 +108,8 @@ Because Channel Harvest is an open-source tool and not signed with an expensive 
 You can verify the SHA-256 integrity hash of your downloaded file against `SHA256SUMS.txt` published on the GitHub Releases page:
 
 ```powershell
-Get-FileHash ChannelHarvest-Setup-v1.4.0.exe -Algorithm SHA256
-Get-FileHash ChannelHarvest-Portable-v1.4.0.zip -Algorithm SHA256
+Get-FileHash ChannelHarvest-Setup-v1.3.2.exe -Algorithm SHA256
+Get-FileHash ChannelHarvest-Portable-v1.3.2.zip -Algorithm SHA256
 ```
 
 ---
