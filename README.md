@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>YouTube, TikTok & Bilibili media and creator downloader</strong><br/>
+  <strong>YouTube, TikTok, Bilibili & Facebook media and creator downloader</strong><br/>
   Harvest channels and creator profiles. Keep every video — with full media, subtitles, thumbnails, and metadata archival.<br/>
   Built with Python, PySide6 (Qt for Python), yt-dlp, Deno, and FFmpeg.
 </p>
@@ -23,6 +23,13 @@
 
 ### 🌐 Multi-Platform Support (YouTube, TikTok & Bilibili)
 * **Dedicated Platform Selector**: Easily switch between supported platforms (YouTube, TikTok, and Bilibili) right from the top navigation bar with adaptive URL placeholder cues.
+* **Facebook Video, Reels & Page Archival**:
+  * Full support for Facebook Watch videos (`facebook.com/watch/?v=...`), standard video URLs (`facebook.com/{user}/videos/...`, `facebook.com/video.php?v=...`), and Facebook Reels (`facebook.com/reel/...`, `fb.watch/...`).
+  * **Clean Title Sanitization**: Automatically strips leading metric noise and engagement text (e.g. `10K views, 250 likes · Video Title`) from scan results and filenames.
+  * **High-Definition Video Downloads**: Supports MP4, MOV, and MKV with optimized FFmpeg stream merging and container compatibility.
+  * **Standalone Audio Extraction**: Crystal-clear audio extraction in WAV, MP3, M4A, FLAC, AAC, or OPUS.
+  * **Complete Asset Archival**: Native thumbnails/covers, raw descriptions (`.description`), and dedicated Facebook structured metadata records (`.metadata.txt`).
+  * **Platform-Scoped Cookie Authentication**: Netscape `cookies.txt` support for private groups, restricted pages, and authenticated high-definition streams.
 * **TikTok Video & Creator Archival**:
   * Full support for TikTok video URLs (`tiktok.com/@user/video/...`, `vt.tiktok.com/...`, `vm.tiktok.com/...`) and creator profile URLs (`tiktok.com/@username`).
   * High-speed profile batch scanning and metadata retrieval without UI freezes.
@@ -54,7 +61,7 @@
   * Automatically converts tracks to standard SubRip (`.srt`) format via bundled FFmpeg with clean player-friendly filename matching.
 * **Thumbnail & Cover Archival**: Download video thumbnails and TikTok covers as separate image files in JPG, PNG, WEBP, or native source format matching media filenames without container embedding.
 * **Raw Descriptions**: Exports raw video descriptions to clean `.description` text files preserving line breaks and links.
-* **Structured Metadata**: Converts complete video metadata into a structured `.metadata.txt` record.
+* **Platform-Dedicated Structured Metadata**: Modular metadata export architecture (`metadata/`) that generates platform-tailored records:
 * **Chapter Extraction**: Extracts timestamped chapter navigation markers into clean `.chapters.txt` files (YouTube).
 
 ### 🏷️ Customizable File Naming & Organization
@@ -90,8 +97,8 @@ Visit the [GitHub Releases](https://github.com/jjsiew2014-art/ChannelHarvest/rel
 
 | Package | File | Description |
 | :--- | :--- | :--- |
-| **Windows Installer** (Recommended) | `ChannelHarvest-Setup-v1.3.2.exe` | Standard setup wizard |
-| **Standalone Portable ZIP** | `ChannelHarvest-Portable-v1.3.2.zip` | Zero installation — extract and run anywhere |
+| **Windows Installer** (Recommended) | `ChannelHarvest-Setup-v1.3.3.exe` | Standard setup wizard (Inno Setup) with desktop shortcuts and uninstaller |
+| **Standalone Portable ZIP** | `ChannelHarvest-Portable-v1.3.3.zip` | Zero installation — extract anywhere and run `ChannelHarvest.exe` |
 
 Both packages are fully self-contained with bundled `runtime/` binaries (`ffmpeg.exe`, `ffprobe.exe`, `deno.exe`, `yt-dlp.exe`).
 
@@ -108,8 +115,8 @@ Because Channel Harvest is an open-source tool and not signed with an expensive 
 You can verify the SHA-256 integrity hash of your downloaded file against `SHA256SUMS.txt` published on the GitHub Releases page:
 
 ```powershell
-Get-FileHash ChannelHarvest-Setup-v1.3.2.exe -Algorithm SHA256
-Get-FileHash ChannelHarvest-Portable-v1.3.2.zip -Algorithm SHA256
+Get-FileHash ChannelHarvest-Setup-v1.3.3.exe -Algorithm SHA256
+Get-FileHash ChannelHarvest-Portable-v1.3.3.zip -Algorithm SHA256
 ```
 
 ---
@@ -218,8 +225,8 @@ The script will automatically:
 2. Generate multi-resolution icons and PE metadata.
 3. Clean and freeze the application using PyInstaller.
 4. Deploy the `runtime/` folder into `dist/ChannelHarvest/`.
-5. Package `release/ChannelHarvest-Portable-v1.3.0.zip`.
-6. Compile `release/ChannelHarvest-Setup-v1.3.0.exe` using Inno Setup.
+5. Package `release/ChannelHarvest-Portable-v1.3.3.zip`.
+6. Compile `release/ChannelHarvest-Setup-v1.3.3.exe` using Inno Setup.
 7. Generate cryptographic SHA-256 hashes in `release/SHA256SUMS.txt`.
 
 ---
