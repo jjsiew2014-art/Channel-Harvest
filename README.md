@@ -22,80 +22,39 @@
 ## 🌟 Key Features
 
 ### 🌐 Multi-Platform Support (YouTube, TikTok, Bilibili, Facebook & Instagram)
-* **Dedicated Platform Selector**: Easily switch between supported platforms (YouTube, TikTok, Bilibili, Facebook, and Instagram) right from the top navigation bar with adaptive URL placeholder cues.
+Easily switch between platforms directly from the top navigation bar with adaptive URL placeholder cues:
+* **YouTube Video, Shorts, Playlist & Channel Archival**:
+  * Full support for single videos, Shorts, playlists, and entire channel archives (`/channel/`, `/@handle`, `/c/`).
+  * Bundled **EJS & Deno JavaScript challenge solver** directly in `runtime/` to resolve client-side `n-sig` player challenge decryption, eliminating download throttling and HTTP 403 Forbidden errors.
+  * Multi-lingual subtitle detection & auto-conversion to standard SubRip (`.srt`) format, timestamped chapter navigation markers (`.chapters.txt`), and structured metadata.
 * **Instagram Reels, Video Posts, Carousels & Profile Archival**:
-  * Full support for single Instagram Reels (`instagram.com/reel/...`, `instagram.com/reels/...`), standard video posts (`instagram.com/p/...`), and IGTV (`instagram.com/tv/...`).
-  * **Carousel Multi-Item Extraction**: Preserves original parent post captions and media ordering, generating distinct, non-colliding files (`{parent_id}_{idx}`) while filtering photo-only slides honestly without fabricating fake video entries.
-  * **Public Profile & Creator Batch Scanning**: Enumerates accessible Reels and video posts with deduplication and verified pagination support.
-  * **Platform-Scoped Custom Cookie Authentication**: Netscape `cookies.txt` support for login-required posts, restricted accounts, and private profiles with verified session validation (`sessionid`, `ds_user_id`) and zero credential leakage.
-  * **High-Definition Video Downloads**: Supports MP4, MOV, and MKV with automatic audio remuxing and container optimization.
-  * **Complete Asset Archival**: Native thumbnails (`.jpg`), post captions (`.description`), and dedicated Instagram structured metadata records (`.metadata.txt`).
-  * **Authentic Title Synchronization**: Matches video filenames with post captions and companion assets, eliminating generic `"Video by instagram"` placeholders.
-* **Facebook Video, Reels & Page Archival**:
-  * Full support for Facebook Watch videos (`facebook.com/watch/?v=...`), standard video URLs (`facebook.com/{user}/videos/...`, `facebook.com/video.php?v=...`), and Facebook Reels (`facebook.com/reel/...`, `fb.watch/...`).
-  * **Clean Title Sanitization**: Automatically strips leading metric noise and engagement text (e.g. `10K views, 250 likes · Video Title`) from scan results and filenames.
-  * **High-Definition Video Downloads**: Supports MP4, MOV, and MKV with optimized FFmpeg stream merging and container compatibility.
-  * **Standalone Audio Extraction**: Crystal-clear audio extraction in WAV, MP3, M4A, FLAC, AAC, or OPUS.
-  * **Complete Asset Archival**: Native thumbnails/covers, raw descriptions (`.description`), and dedicated Facebook structured metadata records (`.metadata.txt`).
-  * **Platform-Scoped Cookie Authentication**: Netscape `cookies.txt` support for private groups, restricted pages, and authenticated high-definition streams.
+  * Full support for single Reels (`/reel/`, `/reels/`), standard video posts (`/p/`), IGTV (`/tv/`), and public creator profiles (`/<username>/`).
+* **Facebook Video, Watch & Reels Archival**:
+  * Full support for Facebook Watch (`/watch/?v=...`), page/creator videos (`/{user}/videos/...`), and Facebook Reels (`/reel/`, `fb.watch`).
 * **TikTok Video & Creator Archival**:
-  * Full support for TikTok video URLs (`tiktok.com/@user/video/...`, `vt.tiktok.com/...`, `vm.tiktok.com/...`) and creator profile URLs (`tiktok.com/@username`).
-  * High-speed profile batch scanning and metadata retrieval without UI freezes.
-  * High-definition, watermark-free video downloads (MP4, MOV).
-  * Standalone audio extraction (WAV, MP3, M4A, FLAC, AAC, OPUS).
-  * Complete asset archival: native covers/thumbnails, raw descriptions, and structured metadata records.
+  * High-speed batch scanning and watermark-free video downloads for video links (`/video/...`, `vt.tiktok.com`, `vm.tiktok.com`) and creator profiles (`/@username`).
 * **Bilibili Video, Multi-Part & Space Archival (哔哩哔哩)**:
-  * Full support for Bilibili video URLs (`bilibili.com/video/BV...` / `av...`), multi-part (分P) episodes with clean part preservation, creator Space URLs (`space.bilibili.com/{mid}`), user video submissions, and media lists/series.
-  * Real-time metadata scanning displaying the actual video title returned by Bilibili instead of generic fallback identifiers.
-  * Anti-crawler & Wbi request signing protection with platform-scoped custom Cookie file authentication to prevent server rejection (Error 352).
-  * High-definition video downloads (MP4, MKV) up to 1080P/4K 60fps (when authenticated with VIP/member cookies).
-  * Standalone audio extraction (WAV, MP3, M4A, FLAC, AAC, OPUS).
-  * Complete asset archival: native high-resolution covers, raw descriptions, and dedicated Bilibili structured metadata records.
-* **Extensible Multi-Platform Architecture**: Modular platform adapters with isolated capability flags, URL auto-detection, and strictly scoped authentication configurations.
+  * Full support for videos (`BV...`/`av...`), multi-part (分P) episodes with clean part preservation, and creator Space archives (`space.bilibili.com/{mid}`) with anti-crawler Wbi request protection.
 
-### ⚡ EJS & Deno JavaScript Challenge Solver
-* **Modern Challenge Solver**: Bundles a dedicated modern JavaScript runtime engine to solve YouTube's latest client-side signature decryption and Embedded JavaScript player routines without requiring external Node.js or Deno installations.
-* **Zero Throttling & 403 Recovery**: Completely resolves YouTube download throttling, signature calculation failures, and HTTP 403 Forbidden errors.
+### 🎛️ Flexible Download & Archival Modes
+* **Video + Audio**: High-definition video with merged audio streams (MP4, MOV, MKV).
+* **Audio Only**: Pristine standalone audio extraction (WAV, MP3, M4A, FLAC, AAC, OPUS) with customizable bitrates.
+* **Assets Only**: Rapidly extracts subtitles (`.srt`), covers/thumbnails (`.jpg`, `.png`), descriptions (`.description`), chapters, and metadata records in seconds without re-downloading media streams.
+* **Platform-Dedicated Structured Metadata**: Modular exporter (`metadata/`) generating platform-tailored UTF-8 `.metadata.txt` records capturing uploader info, metrics, timestamps, and canonical source URLs.
 
-### 🎛️ Flexible Download Modes
-* **Video + Audio**: High-definition video with crystal-clear merged audio (MOV, MP4, MKV, WEBM).
-* **Video Only**: Standalone high-resolution video streams.
-* **Audio Only**: Pristine standalone audio extracted into WAV, MP3, M4A, FLAC, AAC, or OPUS with customizable bitrates.
-* **Assets Only**: Standalone subtitle, thumbnail/cover, and metadata asset extraction in seconds without downloading media streams.
+### 🛡️ Smart Availability Detection & Safe File Organization
+* **Automatic Availability Detection & Skip**: Defensively detects private, deleted, copyright-restricted, or region-blocked videos during scanning; disables inaccessible checkboxes with informative tooltips and skips them cleanly in the queue.
+* **Windows Path Budgeting & Sanitization**: Centralized engine (`core/paths.py`) strips Windows-illegal characters and reserved device names (`CON`, `PRN`, `AUX`), with dynamic `MAX_PATH` budgeting for deep directory paths.
+* **Customizable Organization**: Option to append video IDs (`[<id>]`) and organize each video and its companion assets into dedicated subfolders.
 
-### 📝 Comprehensive Subtitles, Thumbnails & Metadata Archival
-* **Intelligent Subtitle & Caption Extraction**:
-  * Automatically detects official manual subtitles and auto-generated captions across multiple languages (Chinese, English, Malay, Japanese, Korean, or All).
-  * Automatically converts tracks to standard SubRip (`.srt`) format via bundled FFmpeg with clean player-friendly filename matching.
-* **Thumbnail & Cover Archival**: Download video thumbnails and TikTok covers as separate image files in JPG, PNG, WEBP, or native source format matching media filenames without container embedding.
-* **Raw Descriptions**: Exports raw video descriptions to clean `.description` text files preserving line breaks and links.
-* **Platform-Dedicated Structured Metadata**: Modular metadata export architecture (`metadata/`) that generates platform-tailored records:
-* **Chapter Extraction**: Extracts timestamped chapter navigation markers into clean `.chapters.txt` files (YouTube).
+### 🔒 Platform-Scoped Authentication
+* **Isolated Credentials**: Dedicated Netscape `cookies.txt` support per platform, ensuring zero cross-platform credential leakage.
+* **Session Verification**: Built-in validation for YouTube, Instagram (`sessionid`), Bilibili (`SESSDATA`), and Facebook cookies to access private, members-only, or login-required content safely.
 
-### 🏷️ Customizable File Naming & Organization
-* **Clean Filenames by Default**: Media, subtitles, thumbnails, and metadata default to clean video titles rather than forcing video IDs.
-* **Optional Video ID in Filename**: Enable `Include Video ID in filename` under **Download Option → File Organization** to append `[<id>]`.
-* **Automatic Collision Protection**: Detects duplicate titles and protects against accidental overwrites by safely appending `[<id>]` only when necessary.
-* **Individual Video Folder Organization**: Optionally organizes each video and all its related assets into its own dedicated subfolder.
-
-### 🔒 Platform-Scoped Authentication & Cookie Management
-* **Platform Isolation**: Authentication credentials and profiles are strictly scoped per platform to prevent credential leakage across platforms.
-* **Custom Cookie File Support**: Supports Netscape format `cookies.txt` files with automated syntax validation, expiration warnings, and security sanitization.
-* **Direct Browser Cookie Extraction**: Direct extraction support with Windows DPAPI safety diagnostics.
-* **Live Authentication Verification**: Test login and premium status before starting batch downloads.
-* **Unrestricted Content Access**: Unlocks age-restricted videos, private playlists, members-only uploads, and unlisted high-definition streams.
-
-### ⚙️ Centralized Runtime Manager & Diagnostics
-* **Component Health Dashboard**: Real-time visual status dashboard integrated into Settings to inspect operational readiness, paths, and versions of all core components.
-* **In-App Updater**: Asynchronous background updater for `yt-dlp` requiring zero administrator privileges, backed by multi-level version caching for instantaneous dialog response.
-* **One-Click System Diagnostics**: Collects hardware architecture, Windows OS build, Python runtime, component versions, network connectivity, and cookie configuration for rapid debugging.
-* **Dedicated Sanitized Error Logging**: Unhandled exceptions and background failures are recorded in `channel_harvest_error.log` with automatic privacy scrubbing, paired with an intelligent error classifier.
-
-### 🖥️ Polished Windows Desktop UI & Resiliency
-* **Windows Taskbar Progress**: Real-time download progress tracking rendered directly on the Windows taskbar application icon with dynamic color status (green for active, yellow for paused, red for errors).
-* **Bilingual Language Support**: Switch dynamically between English, Traditional Chinese and Simplified Chinese directly from Settings, updating all labels, dialogs, and controls in real time without restart.
-* **Polished Desktop Experience**: Desktop-first design featuring native Dark and Light theme switching, balanced settings layout, ergonomic vector action buttons, and fast UI responsiveness.
-* **Queue & Resiliency Management**: Full control to pause, resume, or cancel active downloads, backed by automatic 3x retries on transient network failures.
+### 🖥️ Modern Desktop Experience & Diagnostics
+* **Responsive PySide6 UI**: Native Dark and Light themes, Windows taskbar dynamic progress bar (`ITaskbarList3`), and non-blocking background scanning/download queues.
+* **Trilingual Localization**: Instant dynamic switching between English, 简体中文, and 繁體中文 directly from Settings without application restart.
+* **Component Dashboard & Diagnostics**: Live health inspection of core binaries, one-click system diagnostics, and background in-app updater for `yt-dlp`.
 
 ---
 
