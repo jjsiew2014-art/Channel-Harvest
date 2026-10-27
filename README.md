@@ -5,13 +5,13 @@
 </p>
 
 <p align="center">
-  <strong>YouTube, TikTok, Bilibili & Facebook media and creator downloader</strong><br/>
-  Harvest channels and creator profiles. Keep every video — with full media, subtitles, thumbnails, and metadata archival.<br/>
+  <strong>YouTube, TikTok, Bilibili, Facebook & Instagram media and creator downloader</strong><br/>
+  Harvest channels, creator profiles, spaces, pages, and accounts. Keep every video — with full media, subtitles, thumbnails, and metadata archival.<br/>
   Built with Python, PySide6 (Qt for Python), yt-dlp, Deno, and FFmpeg.
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.3.2-6C63FF?style=flat-square"/>
+  <img alt="Version" src="https://img.shields.io/badge/version-1.3.4-6C63FF?style=flat-square"/>
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-blue?style=flat-square"/>
   <img alt="License" src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square"/>
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-F59E0B?style=flat-square"/>
@@ -21,8 +21,16 @@
 
 ## 🌟 Key Features
 
-### 🌐 Multi-Platform Support (YouTube, TikTok & Bilibili)
-* **Dedicated Platform Selector**: Easily switch between supported platforms (YouTube, TikTok, and Bilibili) right from the top navigation bar with adaptive URL placeholder cues.
+### 🌐 Multi-Platform Support (YouTube, TikTok, Bilibili, Facebook & Instagram)
+* **Dedicated Platform Selector**: Easily switch between supported platforms (YouTube, TikTok, Bilibili, Facebook, and Instagram) right from the top navigation bar with adaptive URL placeholder cues.
+* **Instagram Reels, Video Posts, Carousels & Profile Archival (Instagram 下载支持)**:
+  * Full support for single Instagram Reels (`instagram.com/reel/...`, `instagram.com/reels/...`), standard video posts (`instagram.com/p/...`), and IGTV (`instagram.com/tv/...`).
+  * **Carousel Multi-Item Extraction**: Preserves original parent post captions and media ordering, generating distinct, non-colliding files (`{parent_id}_{idx}`) while filtering photo-only slides honestly without fabricating fake video entries.
+  * **Public Profile & Creator Batch Scanning**: Enumerates accessible Reels and video posts with deduplication and verified pagination support.
+  * **Platform-Scoped Custom Cookie Authentication**: Netscape `cookies.txt` support for login-required posts, restricted accounts, and private profiles with verified session validation (`sessionid`, `ds_user_id`) and zero credential leakage.
+  * **High-Definition Video Downloads**: Supports MP4, MOV, and MKV with automatic audio remuxing and container optimization.
+  * **Complete Asset Archival**: Native thumbnails (`.jpg`), post captions (`.description`), and dedicated Instagram structured metadata records (`.metadata.txt`).
+  * **Authentic Title Synchronization**: Matches video filenames with post captions and companion assets, eliminating generic `"Video by instagram"` placeholders.
 * **Facebook Video, Reels & Page Archival**:
   * Full support for Facebook Watch videos (`facebook.com/watch/?v=...`), standard video URLs (`facebook.com/{user}/videos/...`, `facebook.com/video.php?v=...`), and Facebook Reels (`facebook.com/reel/...`, `fb.watch/...`).
   * **Clean Title Sanitization**: Automatically strips leading metric noise and engagement text (e.g. `10K views, 250 likes · Video Title`) from scan results and filenames.
@@ -97,8 +105,8 @@ Visit the [GitHub Releases](https://github.com/jjsiew2014-art/ChannelHarvest/rel
 
 | Package | File | Description |
 | :--- | :--- | :--- |
-| **Windows Installer** (Recommended) | `ChannelHarvest-Setup-v1.3.3.exe` | Standard setup wizard (Inno Setup) with desktop shortcuts and uninstaller |
-| **Standalone Portable ZIP** | `ChannelHarvest-Portable-v1.3.3.zip` | Zero installation — extract anywhere and run `ChannelHarvest.exe` |
+| **Windows Installer** (Recommended) | `ChannelHarvest-Setup-v1.3.4.exe` | Standard setup wizard (Inno Setup) with desktop shortcuts and uninstaller |
+| **Standalone Portable ZIP** | `ChannelHarvest-Portable-v1.3.4.zip` | Zero installation — extract anywhere and run `ChannelHarvest.exe` |
 
 Both packages are fully self-contained with bundled `runtime/` binaries (`ffmpeg.exe`, `ffprobe.exe`, `deno.exe`, `yt-dlp.exe`).
 
@@ -115,8 +123,8 @@ Because Channel Harvest is an open-source tool and not signed with an expensive 
 You can verify the SHA-256 integrity hash of your downloaded file against `SHA256SUMS.txt` published on the GitHub Releases page:
 
 ```powershell
-Get-FileHash ChannelHarvest-Setup-v1.3.3.exe -Algorithm SHA256
-Get-FileHash ChannelHarvest-Portable-v1.3.3.zip -Algorithm SHA256
+Get-FileHash ChannelHarvest-Setup-v1.3.4.exe -Algorithm SHA256
+Get-FileHash ChannelHarvest-Portable-v1.3.4.zip -Algorithm SHA256
 ```
 
 ---
@@ -140,11 +148,12 @@ Channel Harvest/
 │
 ├── core/                          # Data Models, Paths, Diagnostics & Settings
 │   ├── __init__.py
+│   ├── availability.py            # Platform-aware video accessibility & skip detection
 │   ├── diagnostics.py             # System & runtime diagnostic report generator
 │   ├── error_classifier.py        # Intelligent error categorization & action advice
-│   ├── i18n.py                    # Bilingual internationalization (English / 简体中文)
-│   ├── models.py                  # VideoItem, DownloadSettings, VideoStatus
-│   ├── paths.py                   # AppData & runtime path resolution
+│   ├── i18n.py                    # Tri-lingual internationalization (English / 简体中文 / 繁體中文)
+│   ├── models.py                  # VideoItem, DownloadSettings, VideoStatus, ScanResult
+│   ├── paths.py                   # AppData & runtime path resolution and Windows sanitization
 │   ├── settings.py                # Persistent JSON SettingsManager
 │   ├── version.py                 # Central version & branding constants
 │   └── platform/                  # Extensible Multi-Platform Architecture
@@ -153,9 +162,12 @@ Channel Harvest/
 │       ├── base.py                # BasePlatformAdapter contract
 │       ├── capabilities.py        # Platform capability definitions & flags
 │       ├── detector.py            # Automatic URL-to-platform detection
-│       ├── douyin.py              # Douyin platform adapter (experimental/frozen)
+│       ├── youtube.py             # YouTube platform adapter
 │       ├── tiktok.py              # TikTok platform adapter
-│       └── youtube.py             # YouTube platform adapter
+│       ├── bilibili.py            # Bilibili platform adapter
+│       ├── facebook.py            # Facebook platform adapter
+│       ├── instagram.py           # Instagram platform adapter
+│       └── douyin.py              # Douyin platform adapter (frozen)
 │
 ├── downloader/                    # Download & Extraction Engine
 │   ├── __init__.py
@@ -167,9 +179,20 @@ Channel Harvest/
 │   ├── info_manager.py            # Description, metadata & chapters extraction engine
 │   ├── runtime_manager.py         # Live component tracking, version cache & updates
 │   ├── subtitle_manager.py        # Intelligent subtitle detection, conversion & normalization
-│   ├── thumbnail_manager.py       # YouTube thumbnail & TikTok cover downloader
+│   ├── thumbnail_manager.py       # Cover & thumbnail downloader
 │   ├── updater.py                 # Standalone yt-dlp updater (binary & wheel)
 │   └── ytdlp_engine.py            # Direct yt-dlp Python API integration
+│
+├── metadata/                      # Platform-Dedicated Structured Metadata Exporters
+│   ├── __init__.py
+│   ├── base_formatter.py          # Abstract metadata TXT formatter
+│   ├── metadata_exporter.py       # Exporter dispatching to platform formatters
+│   ├── youtube_formatter.py       # YouTube .metadata.txt record formatter
+│   ├── tiktok_formatter.py        # TikTok .metadata.txt record formatter
+│   ├── bilibili_formatter.py      # Bilibili .metadata.txt record formatter
+│   ├── facebook_formatter.py      # Facebook .metadata.txt record formatter
+│   ├── instagram_formatter.py     # Instagram .metadata.txt record formatter
+│   └── generic_formatter.py       # Universal fallback metadata formatter
 │
 ├── gui/                           # Desktop User Interface (PySide6)
 │   ├── __init__.py
@@ -225,8 +248,8 @@ The script will automatically:
 2. Generate multi-resolution icons and PE metadata.
 3. Clean and freeze the application using PyInstaller.
 4. Deploy the `runtime/` folder into `dist/ChannelHarvest/`.
-5. Package `release/ChannelHarvest-Portable-v1.3.3.zip`.
-6. Compile `release/ChannelHarvest-Setup-v1.3.3.exe` using Inno Setup.
+5. Package `release/ChannelHarvest-Portable-v1.3.4.zip`.
+6. Compile `release/ChannelHarvest-Setup-v1.3.4.exe` using Inno Setup.
 7. Generate cryptographic SHA-256 hashes in `release/SHA256SUMS.txt`.
 
 ---
