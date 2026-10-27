@@ -23,7 +23,7 @@
 
 ### 🌐 Multi-Platform Support (YouTube, TikTok, Bilibili, Facebook & Instagram)
 * **Dedicated Platform Selector**: Easily switch between supported platforms (YouTube, TikTok, Bilibili, Facebook, and Instagram) right from the top navigation bar with adaptive URL placeholder cues.
-* **Instagram Reels, Video Posts, Carousels & Profile Archival (Instagram 下载支持)**:
+* **Instagram Reels, Video Posts, Carousels & Profile Archival**:
   * Full support for single Instagram Reels (`instagram.com/reel/...`, `instagram.com/reels/...`), standard video posts (`instagram.com/p/...`), and IGTV (`instagram.com/tv/...`).
   * **Carousel Multi-Item Extraction**: Preserves original parent post captions and media ordering, generating distinct, non-colliding files (`{parent_id}_{idx}`) while filtering photo-only slides honestly without fabricating fake video entries.
   * **Public Profile & Creator Batch Scanning**: Enumerates accessible Reels and video posts with deduplication and verified pagination support.
