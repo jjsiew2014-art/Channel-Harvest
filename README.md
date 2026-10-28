@@ -5,13 +5,13 @@
 </p>
 
 <p align="center">
-  <strong>YouTube, TikTok, Bilibili, Facebook & Instagram media and creator downloader</strong><br/>
+  <strong>YouTube, TikTok, Bilibili, Facebook, Instagram & X (Twitter) media and creator downloader</strong><br/>
   Harvest channels, creator profiles, spaces, pages, and accounts. Keep every video — with full media, subtitles, thumbnails, and metadata archival.<br/>
   Built with Python, PySide6 (Qt for Python), yt-dlp, Deno, and FFmpeg.
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.3.4-6C63FF?style=flat-square"/>
+  <img alt="Version" src="https://img.shields.io/badge/version-1.3.5-6C63FF?style=flat-square"/>
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-blue?style=flat-square"/>
   <img alt="License" src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square"/>
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-F59E0B?style=flat-square"/>
@@ -21,12 +21,17 @@
 
 ## 🌟 Key Features
 
-### 🌐 Multi-Platform Support (YouTube, TikTok, Bilibili, Facebook & Instagram)
+### 🌐 Multi-Platform Support (YouTube, TikTok, Bilibili, Facebook, Instagram & X)
 Easily switch between platforms directly from the top navigation bar with adaptive URL placeholder cues:
 * **YouTube Video, Shorts, Playlist & Channel Archival**:
   * Full support for single videos, Shorts, playlists, and entire channel archives (`/channel/`, `/@handle`, `/c/`).
   * Bundled **EJS & Deno JavaScript challenge solver** directly in `runtime/` to resolve client-side `n-sig` player challenge decryption, eliminating download throttling and HTTP 403 Forbidden errors.
   * Multi-lingual subtitle detection & auto-conversion to standard SubRip (`.srt`) format, timestamped chapter navigation markers (`.chapters.txt`), and structured metadata.
+* **X (Twitter) Video Post & Multi-Media Archival**:
+  * Direct support for single video and GIF posts (`x.com/<user>/status/<id>`, `twitter.com/<user>/status/<id>`, `mobile.twitter.com`, `x.com/i/status/<id>`).
+  * Intelligent multi-video tweet extraction: unpacks and enumerates individual video streams (`/video/1`, `/video/2`) with parent post caption and metadata preservation.
+  * Adaptive title cleaning (`clean_x_title`): strips redundant `User on X: "..."` wrappers, removes trailing `t.co` media links, and enforces safe filename length limits while preserving Unicode characters, CJK scripts, and emojis.
+  * Dedicated Netscape `cookies.txt` authentication support (`auth_token`, `ct0`, `twid`) with session validation and sensitive credential scrubbing for protected accounts and login-gated content.
 * **Instagram Reels, Video Posts, Carousels & Profile Archival**:
   * Full support for single Reels (`/reel/`, `/reels/`), standard video posts (`/p/`), IGTV (`/tv/`), and public creator profiles (`/<username>/`).
 * **Facebook Video, Watch & Reels Archival**:
@@ -64,8 +69,8 @@ Visit the [GitHub Releases](https://github.com/jjsiew2014-art/ChannelHarvest/rel
 
 | Package | File | Description |
 | :--- | :--- | :--- |
-| **Windows Installer** (Recommended) | `ChannelHarvest-Setup-v1.3.4.exe` | Standard setup wizard (Inno Setup) with desktop shortcuts and uninstaller |
-| **Standalone Portable ZIP** | `ChannelHarvest-Portable-v1.3.4.zip` | Zero installation — extract anywhere and run `ChannelHarvest.exe` |
+| **Windows Installer** (Recommended) | `ChannelHarvest-Setup-v1.3.5.exe` | Standard setup wizard (Inno Setup) with desktop shortcuts and uninstaller |
+| **Standalone Portable ZIP** | `ChannelHarvest-Portable-v1.3.5.zip` | Zero installation — extract anywhere and run `ChannelHarvest.exe` |
 
 Both packages are fully self-contained with bundled `runtime/` binaries (`ffmpeg.exe`, `ffprobe.exe`, `deno.exe`, `yt-dlp.exe`).
 
@@ -82,8 +87,8 @@ Because Channel Harvest is an open-source tool and not signed with an expensive 
 You can verify the SHA-256 integrity hash of your downloaded file against `SHA256SUMS.txt` published on the GitHub Releases page:
 
 ```powershell
-Get-FileHash ChannelHarvest-Setup-v1.3.4.exe -Algorithm SHA256
-Get-FileHash ChannelHarvest-Portable-v1.3.4.zip -Algorithm SHA256
+Get-FileHash ChannelHarvest-Setup-v1.3.5.exe -Algorithm SHA256
+Get-FileHash ChannelHarvest-Portable-v1.3.5.zip -Algorithm SHA256
 ```
 
 ---
@@ -126,6 +131,7 @@ Channel Harvest/
 │       ├── bilibili.py            # Bilibili platform adapter
 │       ├── facebook.py            # Facebook platform adapter
 │       ├── instagram.py           # Instagram platform adapter
+│       ├── x.py                   # X (Twitter) platform adapter
 │       └── douyin.py              # Douyin platform adapter (frozen)
 │
 ├── downloader/                    # Download & Extraction Engine
@@ -151,6 +157,7 @@ Channel Harvest/
 │   ├── bilibili_formatter.py      # Bilibili .metadata.txt record formatter
 │   ├── facebook_formatter.py      # Facebook .metadata.txt record formatter
 │   ├── instagram_formatter.py     # Instagram .metadata.txt record formatter
+│   ├── x_formatter.py             # X (Twitter) .metadata.txt record formatter
 │   └── generic_formatter.py       # Universal fallback metadata formatter
 │
 ├── gui/                           # Desktop User Interface (PySide6)
@@ -207,8 +214,8 @@ The script will automatically:
 2. Generate multi-resolution icons and PE metadata.
 3. Clean and freeze the application using PyInstaller.
 4. Deploy the `runtime/` folder into `dist/ChannelHarvest/`.
-5. Package `release/ChannelHarvest-Portable-v1.3.4.zip`.
-6. Compile `release/ChannelHarvest-Setup-v1.3.4.exe` using Inno Setup.
+5. Package `release/ChannelHarvest-Portable-v1.3.5.zip`.
+6. Compile `release/ChannelHarvest-Setup-v1.3.5.exe` using Inno Setup.
 7. Generate cryptographic SHA-256 hashes in `release/SHA256SUMS.txt`.
 
 ---
