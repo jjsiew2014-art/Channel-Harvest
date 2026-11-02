@@ -23,15 +23,15 @@
 
 ### 🌐 Multi-Platform Support (YouTube, YouTube Music, TikTok, Bilibili, Facebook, Instagram & X)
 Easily switch between platforms directly from the top navigation bar with adaptive URL placeholder cues:
-* **YouTube Music Dedicated Platform Support**:
-  * Native platform integration with top navigation switcher and automated URL detection (`music.youtube.com`).
-  * Automatically defaults to **Audio Only** mode for albums, singles, and playlists.
-  * **1:1 Square Album Cover Art**: Extracts Google CDN original uncompressed master artwork (up to 1400x1400+), automatically names files by album (e.g. `<Album_Name>.jpg`), deduplicates across tracks, and embeds directly into audio tags.
-  * **LRC Synchronized Lyrics**: Intelligent discovery and downloading of synchronized `.lrc` lyrics with seamless audio tag embedding (MP3, M4A, FLAC, Opus).
 * **YouTube Video, Shorts, Playlist & Channel Archival**:
   * Full support for single videos, Shorts, playlists, and entire channel archives (`/channel/`, `/@handle`, `/c/`).
   * Bundled **EJS & Deno JavaScript challenge solver** directly in `runtime/` to resolve client-side `n-sig` player challenge decryption, eliminating download throttling and HTTP 403 Forbidden errors.
   * Multi-lingual subtitle detection & auto-conversion to standard SubRip (`.srt`) format, timestamped chapter navigation markers (`.chapters.txt`), and structured metadata.
+* **YouTube Music Dedicated Platform Support**:
+  * Native platform integration with top navigation switcher and automated URL detection (`music.youtube.com`).
+  * Automatically defaults to **Audio Only** mode for albums, singles, and playlists.
+  * **1:1 Square Album Cover Art**: Extracts Google CDN original uncompressed master artwork, automatically names files by album, deduplicates across tracks, and embeds directly into audio tags.
+  * **LRC Synchronized Lyrics**: Intelligent discovery and downloading of synchronized `.lrc` lyrics with seamless audio tag embedding (MP3, M4A, FLAC, Opus).
 * **Facebook Video, Watch, Reels & Profile Media Archive**:
   * Full support for Facebook Watch (`/watch/?v=...`), page/creator videos (`/{user}/videos/...`), and Facebook Reels (`/reel/`, `fb.watch`).
   * **Dual-Engine Profile Archival**: High-performance dual-engine architecture combining `gallery-dl` for photos and image sets with `yt-dlp` for video content and Reels.
