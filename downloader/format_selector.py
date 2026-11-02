@@ -46,13 +46,70 @@ class FormatSelector:
     }
 
     # Supported audio extraction formats
-    AUDIO_FORMATS = ["MP3", "M4A", "WAV", "AAC", "FLAC", "OPUS"]
+    AUDIO_FORMATS = ["WAV", "MP3", "M4A", "AAC", "FLAC", "OPUS"]
 
-    # Audio bitrate mapping for FFmpegExtractAudio
+    # Format-specific bitrate and quality parameter options
+    AUDIO_FORMAT_OPTIONS = {
+        "WAV": [
+            "Best Available",
+            "16-bit PCM",
+            "24-bit PCM",
+            "32-bit Float",
+        ],
+        "FLAC": [
+            "Best Available",
+            "Level 8 (Highest)",
+            "Level 5 (Default)",
+            "Level 0 (Fastest)",
+            "24-bit",
+            "16-bit",
+        ],
+        "MP3": [
+            "Best Available",
+            "320 kbps",
+            "256 kbps",
+            "192 kbps",
+            "128 kbps",
+            "96 kbps",
+            "64 kbps",
+        ],
+        "M4A": [
+            "Best Available",
+            "320 kbps",
+            "256 kbps",
+            "192 kbps",
+            "160 kbps",
+            "128 kbps",
+            "96 kbps",
+            "64 kbps",
+        ],
+        "AAC": [
+            "Best Available",
+            "320 kbps",
+            "256 kbps",
+            "192 kbps",
+            "160 kbps",
+            "128 kbps",
+            "96 kbps",
+            "64 kbps",
+        ],
+        "OPUS": [
+            "Best Available",
+            "256 kbps",
+            "192 kbps",
+            "160 kbps",
+            "128 kbps",
+            "96 kbps",
+            "64 kbps",
+        ],
+    }
+
+    # Audio bitrate mapping for FFmpegExtractAudio preferredquality
     AUDIO_BITRATE_MAP = {
         "320 kbps": "320",
         "256 kbps": "256",
         "192 kbps": "192",
+        "160 kbps": "160",
         "128 kbps": "128",
         "96 kbps": "96",
         "64 kbps": "64",
@@ -60,9 +117,51 @@ class FormatSelector:
     }
 
     @classmethod
-    def get_audio_bitrate_value(cls, bitrate_str: str) -> Optional[str]:
-        """Returns string bitrate (e.g. '320') or None if Best Available."""
+    def get_audio_bitrate_options(cls, audio_format: Optional[str]) -> list:
+        """Returns available bitrate/quality options for the given audio format."""
+        fmt_key = (audio_format or "WAV").upper().strip()
+        return list(cls.AUDIO_FORMAT_OPTIONS.get(fmt_key, cls.AUDIO_FORMAT_OPTIONS["MP3"]))
+
+    @classmethod
+    def get_audio_bitrate_value(cls, bitrate_str: str, audio_format: Optional[str] = None) -> Optional[str]:
+        """
+        Returns string bitrate (e.g. '320') or None if Best Available or non-kbps.
+        For MP3, 'Best Available' (or unset) resolves to '320' (320 kbps) for maximum quality.
+        """
+        fmt = (audio_format or "").strip().lower()
+        if fmt == "mp3" and (not bitrate_str or bitrate_str.strip() in ("", "Best Available")):
+            return "320"
         return cls.AUDIO_BITRATE_MAP.get(bitrate_str)
+
+    @classmethod
+    def get_audio_postprocessor_args(cls, settings: DownloadSettings) -> dict:
+        """
+        Returns custom FFmpegExtractAudio postprocessor arguments for non-kbps formats
+        such as WAV PCM bit depth and FLAC compression level / bit depth.
+        """
+        audio_ext = (settings.audio_format or "WAV").lower().strip()
+        audio_bitrate = (settings.audio_bitrate or "Best Available").strip()
+
+        if audio_ext == "wav":
+            if audio_bitrate == "16-bit PCM":
+                return {"extractaudio": ["-c:a", "pcm_s16le"]}
+            elif audio_bitrate == "24-bit PCM":
+                return {"extractaudio": ["-c:a", "pcm_s24le"]}
+            elif audio_bitrate == "32-bit Float":
+                return {"extractaudio": ["-c:a", "pcm_f32le"]}
+        elif audio_ext == "flac":
+            if audio_bitrate == "Level 8 (Highest)":
+                return {"extractaudio": ["-compression_level", "8"]}
+            elif audio_bitrate == "Level 5 (Default)":
+                return {"extractaudio": ["-compression_level", "5"]}
+            elif audio_bitrate == "Level 0 (Fastest)":
+                return {"extractaudio": ["-compression_level", "0"]}
+            elif audio_bitrate == "24-bit":
+                return {"extractaudio": ["-sample_fmt", "s32"]}
+            elif audio_bitrate == "16-bit":
+                return {"extractaudio": ["-sample_fmt", "s16"]}
+
+        return {}
 
     @classmethod
     def get_max_height(cls, quality_str: str) -> Optional[int]:
@@ -117,13 +216,24 @@ class FormatSelector:
             merge_ext = "mp4"
 
         elif target_container == "mov":
-            # QuickTime MOV natively requires H.264 (avc1) video + AAC (m4a) audio for clean muxing
+            # QuickTime MOV natively requires H.264 (avc1/h264) / HEVC (hev1/hvc1) / ProRes video + AAC (m4a) audio for clean muxing
+            c_filter = "[vcodec~='(?i)^(avc1|h264|hev1|hvc1|hevc|prores)']"
             format_rules = [
-                f"bv*[vcodec^=avc1]{h_filter}{tbr_filter}+ba[ext=m4a]" if (h_filter or tbr_filter) else "bv*[vcodec^=avc1]+ba[ext=m4a]",
-                f"bv*[vcodec^=avc1]{h_filter}+ba[ext=m4a]" if h_filter else None,
-                f"bv*[vcodec^=avc1]{h_filter}+ba" if h_filter else "bv*[vcodec^=avc1]+ba",
-                f"b[vcodec^=avc1]{h_filter}" if h_filter else "b[vcodec^=avc1]",
-                "bv*[ext=mp4]+ba[ext=m4a]",
+                # 1. Native MOV video + AAC audio matching height & bitrate
+                f"bv*{c_filter}{h_filter}{tbr_filter}+ba[ext=m4a]" if (h_filter or tbr_filter) else f"bv*{c_filter}+ba[ext=m4a]",
+                # 2. Native MOV video matching height + AAC audio
+                f"bv*{c_filter}{h_filter}+ba[ext=m4a]" if h_filter else None,
+                # 3. Native MOV video matching height + best audio
+                f"bv*{c_filter}{h_filter}+ba" if h_filter else f"bv*{c_filter}+ba",
+                # 4. Pre-merged stream with native MOV video matching height
+                f"b{c_filter}{h_filter}" if h_filter else f"b{c_filter}",
+                # 5. Best video matching height + AAC audio (MovCompatibilityPP will transcode video if codec is incompatible)
+                f"bv*{h_filter}{tbr_filter}+ba[ext=m4a]" if (h_filter or tbr_filter) else "bv*+ba[ext=m4a]",
+                # 6. Best video matching height + best audio
+                f"bv*{h_filter}+ba" if h_filter else "bv*+ba",
+                # 7. Fallback to pre-merged stream matching height
+                f"b{h_filter}" if h_filter else "b",
+                # 8. Final universal fallback
                 "bv*+ba/b",
             ]
             merge_ext = "mov"
@@ -179,10 +289,10 @@ class FormatSelector:
         Returns:
             Tuple of (format_string: str, audio_ext: str, postprocessors: list)
         """
-        audio_ext = (settings.audio_format or "MP3").lower().strip()
+        audio_ext = (settings.audio_format or "WAV").lower().strip()
         valid_exts = [fmt.lower() for fmt in cls.AUDIO_FORMATS]
         if audio_ext not in valid_exts:
-            audio_ext = "mp3"
+            audio_ext = "wav"
 
         # Stream selector preference
         if audio_ext == "m4a":
@@ -198,7 +308,7 @@ class FormatSelector:
             "preferredcodec": audio_ext,
         }
 
-        bitrate_val = cls.get_audio_bitrate_value(settings.audio_bitrate)
+        bitrate_val = cls.get_audio_bitrate_value(settings.audio_bitrate, audio_format=audio_ext)
         if bitrate_val and audio_ext in ("mp3", "m4a", "aac", "opus"):
             postprocessor["preferredquality"] = bitrate_val
 

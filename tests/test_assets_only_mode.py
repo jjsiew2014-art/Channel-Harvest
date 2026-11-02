@@ -26,8 +26,10 @@ class TestAssetsOnlyMode(unittest.TestCase):
         self.window = MainWindow()
 
     def tearDown(self):
+        from core.settings import SettingsManager
         self.window._download_manager = None
         self.window.close()
+        SettingsManager().set("download_mode", DownloadMode.VIDEO_ONLY)
 
     def test_subtitle_is_not_mandatory_in_assets_only_mode_youtube(self):
         # Select YouTube platform

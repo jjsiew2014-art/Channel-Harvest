@@ -97,7 +97,7 @@ def ensure_icon() -> None:
 
 def ensure_dependencies() -> bool:
     """Verifies that yt-dlp, yt-dlp-ejs, and curl_cffi are installed and compatible."""
-    print_step("Verifying Python Dependencies (yt-dlp, yt-dlp-ejs, curl_cffi)")
+    print_step("Verifying Python Dependencies (yt-dlp, yt-dlp-ejs, curl_cffi, gallery-dl)")
     all_ok = True
     try:
         import yt_dlp
@@ -128,6 +128,30 @@ def ensure_dependencies() -> bool:
             print_success("curl_cffi installed.")
         except Exception as install_err:
             print_error(f"Failed to install curl_cffi: {install_err}")
+            all_ok = False
+
+    try:
+        import gallery_dl
+        print_success(f"gallery-dl version: {getattr(gallery_dl, '__version__', 'unknown')}")
+    except ImportError as e:
+        print_error(f"Missing dependency: {e}. Installing gallery-dl...")
+        try:
+            subprocess.run([sys.executable, "-m", "pip", "install", "gallery-dl>=1.32.18"], check=True)
+            print_success("gallery-dl installed.")
+        except Exception as install_err:
+            print_error(f"Failed to install gallery-dl: {install_err}")
+            all_ok = False
+
+    try:
+        import PIL
+        print_success(f"Pillow version: {getattr(PIL, '__version__', 'unknown')}")
+    except ImportError as e:
+        print_error(f"Missing dependency: {e}. Installing Pillow...")
+        try:
+            subprocess.run([sys.executable, "-m", "pip", "install", "Pillow>=10.0.0"], check=True)
+            print_success("Pillow installed.")
+        except Exception as install_err:
+            print_error(f"Failed to install Pillow: {install_err}")
             all_ok = False
 
     return all_ok
@@ -185,7 +209,7 @@ def stage_runtime_binaries(target_dir: Path) -> bool:
         import urllib.request
 
         download_urls = [
-            "https://github.com/yt-dlp/yt-dlp/releases/download/2026.08.19/yt-dlp.exe",
+            "https://github.com/yt-dlp/yt-dlp/releases/download/2026.10.26/yt-dlp.exe",
             "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe",
         ]
         temp_dest = target_dir / "temp_yt-dlp.exe"

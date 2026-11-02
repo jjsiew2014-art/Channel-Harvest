@@ -245,9 +245,9 @@ class SubtitleManager:
             }
 
     @classmethod
-    def get_target_srt_path(cls, video: VideoItem, target_dir: Path, include_video_id: bool = True) -> Path:
+    def get_target_srt_path(cls, video: VideoItem, target_dir: Path, include_video_id: bool = True, number_prefix: str = "") -> Path:
         """Returns expected default SRT file path for a video item."""
-        filename = resolve_media_filename(video.title, video.video_id, ext="srt", include_video_id=include_video_id)
+        filename = resolve_media_filename(video.title, video.video_id, ext="srt", include_video_id=include_video_id, target_dir=target_dir, number_prefix=number_prefix)
         return target_dir / filename
 
     @classmethod
@@ -261,7 +261,8 @@ class SubtitleManager:
         Independent check verifying whether the target subtitle file already exists and is valid.
         """
         inc_id = getattr(settings, "include_video_id_in_filename", False)
-        stem = resolve_media_filename(video.title, video.video_id, include_video_id=inc_id)
+        num_prefix = getattr(settings, "number_prefix", "")
+        stem = resolve_media_filename(video.title, video.video_id, include_video_id=inc_id, target_dir=target_dir, number_prefix=num_prefix)
 
         # 1. Check clean single-language filename: <stem>.srt
         exact_file = target_dir / f"{stem}.srt"
@@ -438,7 +439,8 @@ class SubtitleManager:
 
         # 3. Configure yt-dlp for Subtitle Retrieval & SRT Conversion
         inc_id = getattr(settings, "include_video_id_in_filename", False)
-        stem = resolve_media_filename(video.title, video.video_id, include_video_id=inc_id)
+        num_prefix = getattr(settings, "number_prefix", "")
+        stem = resolve_media_filename(video.title, video.video_id, include_video_id=inc_id, target_dir=target_dir, number_prefix=num_prefix)
         outtmpl_pattern = str(target_dir / f"{stem}.%(ext)s")
 
         platform = getattr(video, "platform", "youtube")
@@ -448,6 +450,7 @@ class SubtitleManager:
             quiet=True,
             no_warnings=True,
             platform=platform,
+            settings=settings,
         )
         ydl_opts.update({
             "skip_download": True,
@@ -465,11 +468,8 @@ class SubtitleManager:
                 }
             ],
             "outtmpl": outtmpl_pattern,
-            "paths": {
-                "home": str(target_dir),
-                "temp": str(get_temp_dir()),
-            },
         })
+        ydl_opts.pop("paths", None)
 
         if ffmpeg_location:
             ydl_opts["ffmpeg_location"] = ffmpeg_location

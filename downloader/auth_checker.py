@@ -54,8 +54,17 @@ class AuthStatusCode:
     BOT_VERIFICATION_REQUIRED = "BOT_VERIFICATION_REQUIRED"
     NO_YOUTUBE_COOKIES = "NO_YOUTUBE_COOKIES"
     NO_DOUYIN_COOKIES = "NO_DOUYIN_COOKIES"
+    BILIBILI_SESSION_AUTHENTICATED = "BILIBILI_SESSION_AUTHENTICATED"
+    NO_BILIBILI_COOKIES = "NO_BILIBILI_COOKIES"
+    FACEBOOK_SESSION_AUTHENTICATED = "FACEBOOK_SESSION_AUTHENTICATED"
+    NO_FACEBOOK_COOKIES = "NO_FACEBOOK_COOKIES"
+    INSTAGRAM_SESSION_AUTHENTICATED = "INSTAGRAM_SESSION_AUTHENTICATED"
+    NO_INSTAGRAM_COOKIES = "NO_INSTAGRAM_COOKIES"
+    X_SESSION_AUTHENTICATED = "X_SESSION_AUTHENTICATED"
+    NO_X_COOKIES = "NO_X_COOKIES"
     AUTHENTICATION_TEST_FAILED = "AUTHENTICATION_TEST_FAILED"
     UNKNOWN_AUTHENTICATION_ERROR = "UNKNOWN_AUTHENTICATION_ERROR"
+    INTERNAL_ERROR = "INTERNAL_ERROR"
 
     # Backward compatibility aliases
     SUCCESS = "YOUTUBE_SESSION_AUTHENTICATED"
@@ -472,6 +481,114 @@ class AuthChecker:
             cls._cookie_file_cache[cache_key] = (mtime, size, res.copy())
             return res
 
+        if platform == "bilibili":
+            bili_cookies = [c for c in jar if "bilibili.com" in getattr(c, "domain", "").lower()]
+            bili_count = len(bili_cookies)
+            has_bili_session = any(getattr(c, "name", "") in ("SESSDATA", "DedeUserID", "bili_jct") for c in bili_cookies)
+            if bili_count == 0:
+                res = {
+                    "is_valid": False,
+                    "status_code": AuthStatusCode.NO_BILIBILI_COOKIES,
+                    "message": "Cookie file parsed, but contains no Bilibili cookies.",
+                    "cookie_count": total_cookies,
+                    "youtube_cookie_count": 0,
+                    "has_session": False,
+                }
+                cls._cookie_file_cache[cache_key] = (mtime, size, res.copy())
+                return res
+            session_str = "Bilibili session detected" if has_bili_session else "Bilibili cookies found"
+            res = {
+                "is_valid": True,
+                "status_code": AuthStatusCode.COOKIE_FILE_VALID,
+                "message": f"✓ Cookie file detected ({bili_count} Bilibili cookies, {session_str})",
+                "cookie_count": total_cookies,
+                "youtube_cookie_count": bili_count,
+                "has_session": has_bili_session,
+            }
+            cls._cookie_file_cache[cache_key] = (mtime, size, res.copy())
+            return res
+
+        if platform == "facebook":
+            fb_cookies = [c for c in jar if "facebook.com" in getattr(c, "domain", "").lower()]
+            fb_count = len(fb_cookies)
+            has_fb_session = any(getattr(c, "name", "") in ("c_user", "xs") for c in fb_cookies)
+            if fb_count == 0:
+                res = {
+                    "is_valid": False,
+                    "status_code": AuthStatusCode.NO_FACEBOOK_COOKIES,
+                    "message": "Cookie file parsed, but contains no Facebook cookies.",
+                    "cookie_count": total_cookies,
+                    "youtube_cookie_count": 0,
+                    "has_session": False,
+                }
+                cls._cookie_file_cache[cache_key] = (mtime, size, res.copy())
+                return res
+            session_str = "Facebook session detected" if has_fb_session else "Facebook cookies found"
+            res = {
+                "is_valid": True,
+                "status_code": AuthStatusCode.COOKIE_FILE_VALID,
+                "message": f"✓ Cookie file detected ({fb_count} Facebook cookies, {session_str})",
+                "cookie_count": total_cookies,
+                "youtube_cookie_count": fb_count,
+                "has_session": has_fb_session,
+            }
+            cls._cookie_file_cache[cache_key] = (mtime, size, res.copy())
+            return res
+
+        if platform == "instagram":
+            ig_cookies = [c for c in jar if "instagram.com" in getattr(c, "domain", "").lower()]
+            ig_count = len(ig_cookies)
+            has_ig_session = any(getattr(c, "name", "").lower() in ("sessionid", "ds_user_id") for c in ig_cookies)
+            if ig_count == 0:
+                res = {
+                    "is_valid": False,
+                    "status_code": AuthStatusCode.NO_INSTAGRAM_COOKIES,
+                    "message": "Cookie file parsed, but contains no Instagram cookies.",
+                    "cookie_count": total_cookies,
+                    "youtube_cookie_count": 0,
+                    "has_session": False,
+                }
+                cls._cookie_file_cache[cache_key] = (mtime, size, res.copy())
+                return res
+            session_str = "Instagram session detected" if has_ig_session else "Instagram cookies found"
+            res = {
+                "is_valid": True,
+                "status_code": AuthStatusCode.COOKIE_FILE_VALID,
+                "message": f"✓ Cookie file detected ({ig_count} Instagram cookies, {session_str})",
+                "cookie_count": total_cookies,
+                "youtube_cookie_count": ig_count,
+                "has_session": has_ig_session,
+            }
+            cls._cookie_file_cache[cache_key] = (mtime, size, res.copy())
+            return res
+
+        if platform in ("x", "twitter"):
+            x_cookies = [c for c in jar if any(d in getattr(c, "domain", "").lower() for d in ("x.com", "twitter.com"))]
+            x_count = len(x_cookies)
+            has_x_session = any(getattr(c, "name", "").lower() in ("auth_token", "ct0", "twid") for c in x_cookies)
+            if x_count == 0:
+                res = {
+                    "is_valid": False,
+                    "status_code": AuthStatusCode.NO_X_COOKIES,
+                    "message": "Cookie file parsed, but contains no X (Twitter) cookies.",
+                    "cookie_count": total_cookies,
+                    "youtube_cookie_count": 0,
+                    "has_session": False,
+                }
+                cls._cookie_file_cache[cache_key] = (mtime, size, res.copy())
+                return res
+            session_str = "X (Twitter) session detected" if has_x_session else "X (Twitter) cookies found"
+            res = {
+                "is_valid": True,
+                "status_code": AuthStatusCode.COOKIE_FILE_VALID,
+                "message": f"✓ Cookie file detected ({x_count} X cookies, {session_str})",
+                "cookie_count": total_cookies,
+                "youtube_cookie_count": x_count,
+                "has_session": has_x_session,
+            }
+            cls._cookie_file_cache[cache_key] = (mtime, size, res.copy())
+            return res
+
         yt_cookies, has_session = cls._inspect_youtube_cookies(jar)
         yt_count = len(yt_cookies)
 
@@ -513,7 +630,7 @@ class AuthChecker:
         """
         target = (browser_or_file or "").strip()
         if target.lower() in ("none", ""):
-            plat_name = "Douyin" if platform == "douyin" else "YouTube"
+            plat_name = "X (Twitter)" if platform in ("x", "twitter") else ("Instagram" if platform == "instagram" else ("Facebook" if platform == "facebook" else ("Bilibili" if platform == "bilibili" else ("Douyin" if platform == "douyin" else "YouTube"))))
             return AuthTestResult(
                 success=True,
                 stage=AuthStage.COMPLETE,
@@ -885,6 +1002,158 @@ class AuthChecker:
                 platform="douyin",
             )
 
+        elif platform == "bilibili":
+            bili_cookies = [c for c in jar if "bilibili.com" in getattr(c, "domain", "").lower()]
+            has_session = any(getattr(c, "name", "") in ("SESSDATA", "DedeUserID", "bili_jct") for c in bili_cookies)
+            if not bili_cookies:
+                return AuthTestResult(
+                    success=False,
+                    stage="Bilibili Cookie Verification",
+                    status_code=AuthStatusCode.NO_BILIBILI_COOKIES,
+                    browser_name=disp_name,
+                    profile_name="N/A",
+                    cookie_count=total_cookies,
+                    youtube_cookie_count=0,
+                    has_session=False,
+                    reason="The cookie file was parsed, but contains no Bilibili (bilibili.com) cookies.",
+                    suggested_action="Make sure you were logged into bilibili.com when exporting cookies.",
+                    technical_error=f"Parsed {total_cookies} total cookies, 0 for bilibili.com",
+                    platform="bilibili",
+                )
+            status = AuthStatusCode.BILIBILI_SESSION_AUTHENTICATED if has_session else AuthStatusCode.COOKIE_FILE_VALID
+            reason_msg = f"Cookie file successfully loaded. {len(bili_cookies)} Bilibili cookies found."
+            if not has_session:
+                reason_msg += " (Notice: Active login session cookie 'SESSDATA' not detected; 1080p+ or VIP videos may not be accessible)."
+            action_msg = "Bilibili cookie file is active. Channel Harvest will use this cookie file for Bilibili downloads."
+            return AuthTestResult(
+                success=True,
+                stage=AuthStage.COMPLETE,
+                status_code=status,
+                browser_name=disp_name,
+                profile_name="N/A",
+                cookie_count=total_cookies,
+                youtube_cookie_count=len(bili_cookies),
+                has_session=has_session,
+                reason=reason_msg,
+                suggested_action=action_msg,
+                technical_error="",
+                platform="bilibili",
+            )
+
+        elif platform == "facebook":
+            fb_cookies = [c for c in jar if "facebook.com" in getattr(c, "domain", "").lower()]
+            has_session = any(getattr(c, "name", "") in ("c_user", "xs") for c in fb_cookies)
+            if not fb_cookies:
+                return AuthTestResult(
+                    success=False,
+                    stage="Facebook Cookie Verification",
+                    status_code=AuthStatusCode.NO_FACEBOOK_COOKIES,
+                    browser_name=disp_name,
+                    profile_name="N/A",
+                    cookie_count=total_cookies,
+                    youtube_cookie_count=0,
+                    has_session=False,
+                    reason="The cookie file was parsed, but contains no Facebook (facebook.com) cookies.",
+                    suggested_action="Make sure you were logged in to facebook.com when exporting cookies.",
+                    technical_error=f"Parsed {total_cookies} total cookies, 0 for facebook.com",
+                    platform="facebook",
+                )
+            status = AuthStatusCode.FACEBOOK_SESSION_AUTHENTICATED if has_session else AuthStatusCode.COOKIE_FILE_VALID
+            reason_msg = f"Cookie file successfully loaded. {len(fb_cookies)} Facebook cookies found."
+            if not has_session:
+                reason_msg += " (Notice: Active login session cookies 'c_user' or 'xs' not detected; private or friends-only videos may not be accessible)."
+            action_msg = "Facebook cookie file is active. Channel Harvest will use this cookie file for Facebook downloads."
+            return AuthTestResult(
+                success=True,
+                stage=AuthStage.COMPLETE,
+                status_code=status,
+                browser_name=disp_name,
+                profile_name="N/A",
+                cookie_count=total_cookies,
+                youtube_cookie_count=len(fb_cookies),
+                has_session=has_session,
+                reason=reason_msg,
+                suggested_action=action_msg,
+                technical_error="",
+                platform="facebook",
+            )
+
+        elif platform == "instagram":
+            ig_cookies = [c for c in jar if "instagram.com" in getattr(c, "domain", "").lower()]
+            has_session = any(getattr(c, "name", "").lower() in ("sessionid", "ds_user_id") for c in ig_cookies)
+            if not ig_cookies:
+                return AuthTestResult(
+                    success=False,
+                    stage="Instagram Cookie Verification",
+                    status_code=AuthStatusCode.NO_INSTAGRAM_COOKIES,
+                    browser_name=disp_name,
+                    profile_name="N/A",
+                    cookie_count=total_cookies,
+                    youtube_cookie_count=0,
+                    has_session=False,
+                    reason="The cookie file was parsed, but contains no Instagram (instagram.com) cookies.",
+                    suggested_action="Make sure you were logged in to instagram.com when exporting cookies.",
+                    technical_error=f"Parsed {total_cookies} total cookies, 0 for instagram.com",
+                    platform="instagram",
+                )
+            status = AuthStatusCode.INSTAGRAM_SESSION_AUTHENTICATED if has_session else AuthStatusCode.COOKIE_FILE_VALID
+            reason_msg = f"Cookie file successfully loaded. {len(ig_cookies)} Instagram cookies found."
+            if not has_session:
+                reason_msg += " (Notice: Active login session cookie 'sessionid' not detected; private or login-required posts may not be accessible)."
+            action_msg = "Instagram cookie file is active. Channel Harvest will use this cookie file for Instagram downloads."
+            return AuthTestResult(
+                success=True,
+                stage=AuthStage.COMPLETE,
+                status_code=status,
+                browser_name=disp_name,
+                profile_name="N/A",
+                cookie_count=total_cookies,
+                youtube_cookie_count=len(ig_cookies),
+                has_session=has_session,
+                reason=reason_msg,
+                suggested_action=action_msg,
+                technical_error="",
+                platform="instagram",
+            )
+
+        elif platform in ("x", "twitter"):
+            x_cookies = [c for c in jar if any(d in getattr(c, "domain", "").lower() for d in ("x.com", "twitter.com"))]
+            has_session = any(getattr(c, "name", "").lower() in ("auth_token", "ct0", "twid") for c in x_cookies)
+            if not x_cookies:
+                return AuthTestResult(
+                    success=False,
+                    stage="X (Twitter) Cookie Verification",
+                    status_code=AuthStatusCode.NO_X_COOKIES,
+                    browser_name=disp_name,
+                    profile_name="N/A",
+                    cookie_count=total_cookies,
+                    youtube_cookie_count=0,
+                    has_session=False,
+                    reason="The cookie file was parsed, but contains no X/Twitter (x.com, twitter.com) cookies.",
+                    suggested_action="Make sure you were logged in to x.com or twitter.com when exporting cookies.",
+                    technical_error=f"Parsed {total_cookies} total cookies, 0 for x.com / twitter.com",
+                    platform="x",
+                )
+            status = AuthStatusCode.X_SESSION_AUTHENTICATED if has_session else AuthStatusCode.COOKIE_FILE_VALID
+            reason_msg = f"Cookie file successfully loaded. {len(x_cookies)} X (Twitter) cookies found."
+            if not has_session:
+                reason_msg += " (Notice: Active login session cookie 'auth_token' not detected; private or login-required posts may not be accessible)."
+            action_msg = "X (Twitter) cookie file is active. Channel Harvest will use this cookie file for X downloads."
+            return AuthTestResult(
+                success=True,
+                stage=AuthStage.COMPLETE,
+                status_code=status,
+                browser_name=disp_name,
+                profile_name="N/A",
+                cookie_count=total_cookies,
+                youtube_cookie_count=len(x_cookies),
+                has_session=has_session,
+                reason=reason_msg,
+                suggested_action=action_msg,
+                technical_error="",
+                platform="x",
+            )
+
         yt_cookies, has_session = cls._inspect_youtube_cookies(jar)
 
         if not yt_cookies:
@@ -909,17 +1178,31 @@ class AuthChecker:
         req_ok, req_err = cls._verify_live_request(jar)
         if not req_ok:
             is_bot = "bot" in req_err.lower()
+            is_internal = "internal" in req_err.lower() or "attributeerror" in req_err.lower()
+            if is_internal:
+                status = AuthStatusCode.INTERNAL_ERROR
+                reason_msg = "An internal error occurred during authentication verification."
+                action_msg = "Check application logs for details."
+            elif is_bot:
+                status = AuthStatusCode.BOT_VERIFICATION_REQUIRED
+                reason_msg = "YouTube requested additional verification."
+                action_msg = "Consider using a valid browser cookie source and retrying later."
+            else:
+                status = AuthStatusCode.AUTHENTICATION_REQUIRED
+                reason_msg = "YouTube rejected the authenticated request using the provided cookie file."
+                action_msg = "Re-export fresh cookies from an active YouTube browser session."
+
             return AuthTestResult(
                 success=False,
                 stage=AuthStage.YOUTUBE_REQUEST,
-                status_code=AuthStatusCode.BOT_VERIFICATION_REQUIRED if is_bot else AuthStatusCode.AUTHENTICATION_REQUIRED,
+                status_code=status,
                 browser_name=disp_name,
                 profile_name="N/A",
                 cookie_count=total_cookies,
                 youtube_cookie_count=len(yt_cookies),
-                has_session=has_session,
-                reason="YouTube requested additional verification." if is_bot else "YouTube rejected the authenticated request using the provided cookie file.",
-                suggested_action="Consider using a valid browser cookie source and retrying later." if is_bot else "Re-export fresh cookies from an active YouTube browser session.",
+                has_session=False,
+                reason=reason_msg,
+                suggested_action=action_msg,
                 technical_error=req_err or "Authenticated YouTube query failed",
                 platform="youtube",
             )
@@ -1089,6 +1372,16 @@ class AuthChecker:
         """
         try:
             import yt_dlp
+            if not hasattr(jar, "get_cookie_header"):
+                try:
+                    from yt_dlp.cookies import YoutubeDLCookieJar
+                    adapted_jar = YoutubeDLCookieJar()
+                    for c in jar:
+                        adapted_jar.set_cookie(c)
+                    jar = adapted_jar
+                except Exception:
+                    pass
+
             opts = {
                 "quiet": True,
                 "no_warnings": True,
@@ -1103,6 +1396,8 @@ class AuthChecker:
         except Exception as ex:
             err_str = str(ex)
             err_lower = err_str.lower()
+            if isinstance(ex, AttributeError) or "attributeerror" in err_lower or "has no attribute" in err_lower:
+                return False, f"Internal error during live request: {type(ex).__name__}: {PrivacySanitizer.sanitize_message(err_str)}"
             if "sign in" in err_lower or "401" in err_lower or "login" in err_lower or "unauthorized" in err_lower:
                 return False, f"YouTube rejected login: {PrivacySanitizer.sanitize_message(err_str)}"
             if "bot" in err_lower or "confirm you're not a bot" in err_lower:

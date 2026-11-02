@@ -51,9 +51,9 @@ class InfoManager:
             return "00:00:00"
 
     @classmethod
-    def get_description_path(cls, video: VideoItem, target_dir: Path, include_video_id: bool = False) -> Path:
+    def get_description_path(cls, video: VideoItem, target_dir: Path, include_video_id: bool = False, number_prefix: str = "") -> Path:
         """Returns the expected output path for the description file."""
-        filename = resolve_media_filename(video.title, video.video_id, "description", include_video_id=include_video_id)
+        filename = resolve_media_filename(video.title, video.video_id, "description", include_video_id=include_video_id, target_dir=target_dir, number_prefix=number_prefix)
         return target_dir / filename
 
     @classmethod
@@ -116,165 +116,21 @@ class InfoManager:
     def format_metadata_txt(cls, info: Dict[str, Any], video: Optional[VideoItem] = None) -> str:
         """
         Converts raw yt-dlp metadata into a clean, human-readable TXT file formatted with sections.
+        Delegates to the platform-specific MetadataExporter.
         """
-        sep = "=" * 40
-        sections: List[str] = []
-
-        def add_section(title: str, content: str):
-            clean_content = content.strip()
-            sections.append(f"{sep}\n{title}\n{sep}\n\n{clean_content}\n")
-
-        # 1. VIDEO INFORMATION
-        title_val = info.get("title") or (video.title if video else None) or "N/A"
-        vid_id_val = info.get("id") or (video.video_id if video else None) or "N/A"
-        uploader_val = info.get("uploader") or info.get("channel") or "N/A"
-        channel_val = info.get("channel") or info.get("uploader") or (video.channel_title if video else None) or "N/A"
-        channel_id_val = info.get("channel_id") or info.get("uploader_id") or "N/A"
-        channel_url_val = info.get("channel_url") or info.get("uploader_url") or (f"https://www.youtube.com/channel/{channel_id_val}" if channel_id_val != "N/A" else "N/A")
-        upload_date_val = cls.format_date(info.get("upload_date"))
-        duration_val = cls.format_duration(info.get("duration") if info.get("duration") is not None else (video.duration_seconds if video else None))
-        if duration_val == "N/A" and video and video.duration:
-            duration_val = video.duration
-        webpage_url_val = info.get("webpage_url") or info.get("original_url") or (video.url if video else None) or (f"https://www.youtube.com/watch?v={vid_id_val}" if vid_id_val != "N/A" else "N/A")
-
-        video_info_lines = [
-            f"Title:\n{title_val}\n",
-            f"Video ID:\n{vid_id_val}\n",
-            f"Uploader:\n{uploader_val}\n",
-            f"Channel:\n{channel_val}\n",
-            f"Channel ID:\n{channel_id_val}\n",
-            f"Channel URL:\n{channel_url_val}\n",
-            f"Upload Date:\n{upload_date_val}\n",
-            f"Duration:\n{duration_val}\n",
-            f"Webpage URL:\n{webpage_url_val}",
-        ]
-        add_section("VIDEO INFORMATION", "\n".join(video_info_lines))
-
-        # 2. STATISTICS
-        view_cnt = cls.format_number(info.get("view_count"))
-        like_cnt = cls.format_number(info.get("like_count"))
-        comment_cnt = cls.format_number(info.get("comment_count"))
-        sub_cnt = cls.format_number(info.get("channel_follower_count") or info.get("subscriber_count"))
-
-        stats_lines = [
-            f"View Count:\n{view_cnt}\n",
-            f"Like Count:\n{like_cnt}\n",
-            f"Comment Count:\n{comment_cnt}\n",
-            f"Channel Followers:\n{sub_cnt}",
-        ]
-        add_section("STATISTICS", "\n".join(stats_lines))
-
-        # 3. DESCRIPTION
-        raw_desc = info.get("description")
-        desc_text = raw_desc if (raw_desc is not None and str(raw_desc).strip()) else "N/A"
-        add_section("DESCRIPTION", desc_text)
-
-        # 4. TAGS
-        tags = info.get("tags")
-        if tags and isinstance(tags, (list, tuple)) and len(tags) > 0:
-            tags_text = "\n".join(str(t).strip() for t in tags if str(t).strip())
-            if not tags_text:
-                tags_text = "None"
-        else:
-            tags_text = "None"
-        add_section("TAGS", tags_text)
-
-        # 5. CATEGORIES
-        categories = info.get("categories")
-        if categories and isinstance(categories, (list, tuple)) and len(categories) > 0:
-            cats_text = "\n".join(str(c).strip() for c in categories if str(c).strip())
-            if not cats_text:
-                cats_text = "None"
-        else:
-            cats_text = "None"
-        add_section("CATEGORIES", cats_text)
-
-        # 6. CHAPTERS
-        chapters = info.get("chapters")
-        if chapters and isinstance(chapters, (list, tuple)) and len(chapters) > 0:
-            chap_lines = []
-            for chap in chapters:
-                st = chap.get("start_time", 0)
-                ts = cls.format_chapter_time(st)
-                ct = str(chap.get("title", "")).strip()
-                chap_lines.append(f"{ts} {ct}")
-            chapters_text = "\n".join(chap_lines)
-        else:
-            chapters_text = "None"
-        add_section("CHAPTERS", chapters_text)
-
-        # 7. OTHER INFORMATION
-        other_lines: List[str] = []
-
-        width = info.get("width")
-        height = info.get("height")
-        res = info.get("resolution") or (f"{width}x{height}" if width and height else None)
-        other_lines.append(f"Resolution:\n{res or 'N/A'}\n")
-
-        fps = info.get("fps")
-        other_lines.append(f"FPS:\n{fps if fps is not None else 'N/A'}\n")
-
-        vcodec = info.get("vcodec")
-        other_lines.append(f"Video Codec:\n{vcodec if (vcodec and vcodec != 'none') else 'N/A'}\n")
-
-        acodec = info.get("acodec")
-        other_lines.append(f"Audio Codec:\n{acodec if (acodec and acodec != 'none') else 'N/A'}\n")
-
-        achannels = info.get("audio_channels")
-        other_lines.append(f"Audio Channels:\n{achannels if achannels is not None else 'N/A'}\n")
-
-        asr = info.get("asr")
-        other_lines.append(f"Audio Sample Rate:\n{f'{asr} Hz' if asr else 'N/A'}\n")
-
-        lang = info.get("language") or info.get("audio_language")
-        other_lines.append(f"Audio Language:\n{lang or 'N/A'}\n")
-
-        license_val = info.get("license")
-        other_lines.append(f"License:\n{license_val or 'N/A'}\n")
-
-        age_limit = info.get("age_limit")
-        if age_limit is not None:
-            age_str = "All ages (0)" if age_limit == 0 else f"{age_limit}+"
-        else:
-            age_str = "N/A"
-        other_lines.append(f"Age Limit:\n{age_str}\n")
-
-        avail = info.get("availability")
-        other_lines.append(f"Availability:\n{avail or 'N/A'}\n")
-
-        live_status = info.get("live_status") or ("Live" if info.get("is_live") else "Not live")
-        other_lines.append(f"Live Status:\n{live_status}\n")
-
-        extractor = info.get("extractor_key") or info.get("extractor")
-        other_lines.append(f"Extractor:\n{extractor or 'YouTube'}\n")
-
-        for key, label in [
-            ("track", "Music Track"),
-            ("artist", "Music Artist"),
-            ("album", "Music Album"),
-            ("genre", "Genre"),
-            ("release_year", "Release Year"),
-            ("release_date", "Release Date"),
-            ("creator", "Creator"),
-        ]:
-            val = info.get(key)
-            if val:
-                other_lines.append(f"{label}:\n{val}\n")
-
-        add_section("OTHER INFORMATION", "\n".join(other_lines))
-
-        return "\n".join(sections).rstrip() + "\n"
+        from metadata.metadata_exporter import MetadataExporter
+        return MetadataExporter.export_metadata_txt(info, video)
 
     @classmethod
-    def get_metadata_path(cls, video: VideoItem, target_dir: Path, include_video_id: bool = False) -> Path:
+    def get_metadata_path(cls, video: VideoItem, target_dir: Path, include_video_id: bool = False, number_prefix: str = "") -> Path:
         """Returns the expected output path for the .metadata.txt file."""
-        filename = resolve_media_filename(video.title, video.video_id, "metadata.txt", include_video_id=include_video_id)
+        filename = resolve_media_filename(video.title, video.video_id, "metadata.txt", include_video_id=include_video_id, target_dir=target_dir, number_prefix=number_prefix)
         return target_dir / filename
 
     @classmethod
-    def get_chapters_path(cls, video: VideoItem, target_dir: Path, include_video_id: bool = False) -> Path:
+    def get_chapters_path(cls, video: VideoItem, target_dir: Path, include_video_id: bool = False, number_prefix: str = "") -> Path:
         """Returns the expected output path for the .chapters.txt file."""
-        filename = resolve_media_filename(video.title, video.video_id, "chapters.txt", include_video_id=include_video_id)
+        filename = resolve_media_filename(video.title, video.video_id, "chapters.txt", include_video_id=include_video_id, target_dir=target_dir, number_prefix=number_prefix)
         return target_dir / filename
 
     @classmethod
@@ -291,14 +147,15 @@ class InfoManager:
             Tuple of (all_complete: bool, status_by_key: Dict[str, bool])
         """
         inc_id = getattr(settings, "include_video_id_in_filename", False)
-        desc_path = cls.get_description_path(video, target_dir, include_video_id=inc_id)
-        meta_path = cls.get_metadata_path(video, target_dir, include_video_id=inc_id)
-        chap_path = cls.get_chapters_path(video, target_dir, include_video_id=inc_id)
+        num_prefix = getattr(settings, "number_prefix", "")
+        desc_path = cls.get_description_path(video, target_dir, include_video_id=inc_id, number_prefix=num_prefix)
+        meta_path = cls.get_metadata_path(video, target_dir, include_video_id=inc_id, number_prefix=num_prefix)
+        chap_path = cls.get_chapters_path(video, target_dir, include_video_id=inc_id, number_prefix=num_prefix)
 
         def file_exists(primary_path: Path, alt_func) -> bool:
             if primary_path.is_file() and primary_path.stat().st_size > 0:
                 return True
-            alt_path = alt_func(video, target_dir, include_video_id=not inc_id)
+            alt_path = alt_func(video, target_dir, include_video_id=not inc_id, number_prefix=num_prefix)
             if alt_path.is_file() and alt_path.stat().st_size > 0:
                 return True
             return False
@@ -360,9 +217,10 @@ class InfoManager:
         else:
             video_url = video.url
 
-        desc_path = cls.get_description_path(video, target_dir, include_video_id=inc_id)
-        meta_path = cls.get_metadata_path(video, target_dir, include_video_id=inc_id)
-        chap_path = cls.get_chapters_path(video, target_dir, include_video_id=inc_id)
+        num_prefix = getattr(settings, "number_prefix", "")
+        desc_path = cls.get_description_path(video, target_dir, include_video_id=inc_id, number_prefix=num_prefix)
+        meta_path = cls.get_metadata_path(video, target_dir, include_video_id=inc_id, number_prefix=num_prefix)
+        chap_path = cls.get_chapters_path(video, target_dir, include_video_id=inc_id, number_prefix=num_prefix)
 
         # 3. Independent disk skip check
         if settings.skip_existing:
@@ -378,7 +236,7 @@ class InfoManager:
                 }
 
         # 4. Prepare yt-dlp options for single-pass extraction
-        stem = resolve_media_filename(video.title, video.video_id, include_video_id=inc_id)
+        stem = resolve_media_filename(video.title, video.video_id, include_video_id=inc_id, target_dir=target_dir, number_prefix=num_prefix)
         outtmpl_pattern = str(target_dir / f"{stem}.%(ext)s")
 
         platform = getattr(video, "platform", "youtube")
@@ -390,15 +248,12 @@ class InfoManager:
             platform=platform,
             settings=settings,
         )
+        ydl_opts.pop("paths", None)
         ydl_opts.update({
             "skip_download": True,
             "windowsfilenames": True,
             "continuedl": True,
             "outtmpl": outtmpl_pattern,
-            "paths": {
-                "home": str(target_dir),
-                "temp": str(get_temp_dir()),
-            },
         })
 
         need_meta_write = settings.save_metadata and (not settings.skip_existing or not (meta_path.is_file() and meta_path.stat().st_size > 0))
@@ -447,15 +302,21 @@ class InfoManager:
                 if log_callback:
                     log_callback(f"[Metadata] Skipped (already exists): {meta_path.name}")
             elif info:
-                try:
-                    formatted_meta = cls.format_metadata_txt(info, video)
-                    meta_path.write_text(formatted_meta, encoding="utf-8")
+                from metadata.metadata_exporter import MetadataExporter
+                success = MetadataExporter.save_metadata_file(
+                    target_path=meta_path,
+                    info=info,
+                    video=video,
+                    platform_id=getattr(video, "platform", None),
+                    log_callback=log_callback,
+                )
+                if success:
                     saved_files.append(meta_path)
                     if log_callback:
                         log_callback(f"[Metadata] Saved: {meta_path.name}")
-                except Exception as e:
+                else:
                     if log_callback:
-                        log_callback(f"[Metadata] Failed: {video.title}\nReason: {e}")
+                        log_callback(f"[Metadata] Failed: {video.title}")
 
         # 7. Verify and handle Description (.description)
         if settings.save_description:

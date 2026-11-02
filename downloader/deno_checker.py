@@ -76,6 +76,8 @@ class DenoChecker:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=5,
                 creationflags=creation_flags,
             )

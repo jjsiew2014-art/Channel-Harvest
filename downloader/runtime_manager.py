@@ -106,12 +106,16 @@ class RuntimeManager:
     KEY_EJS = "ejs"
     KEY_DENO = "deno"
     KEY_FFMPEG = "ffmpeg"
+    KEY_GALLERYDL = "gallerydl"
 
-    ALL_COMPONENTS = [KEY_YTDLP, KEY_EJS, KEY_DENO, KEY_FFMPEG]
+    ALL_COMPONENTS = [KEY_YTDLP, KEY_GALLERYDL, KEY_EJS, KEY_DENO, KEY_FFMPEG]
 
     # Official API endpoints
     EJS_PYPI_API = "https://pypi.org/pypi/yt-dlp-ejs/json"
     EJS_GITHUB_API = "https://api.github.com/repos/yt-dlp/yt-dlp-ejs/releases/latest"
+
+    GALLERYDL_PYPI_API = "https://pypi.org/pypi/gallery-dl/json"
+    GALLERYDL_GITHUB_API = "https://api.github.com/repos/mikf/gallery-dl/releases/latest"
 
     DENO_GITHUB_API = "https://api.github.com/repos/denoland/deno/releases/latest"
     DENO_WIN_ASSET_NAME = "deno-x86_64-pc-windows-msvc.zip"
@@ -289,6 +293,7 @@ class RuntimeManager:
         """
         return {
             cls.KEY_YTDLP: ComponentInfo(key=cls.KEY_YTDLP, display_name="yt-dlp", current_version="...", status="Detecting..."),
+            cls.KEY_GALLERYDL: ComponentInfo(key=cls.KEY_GALLERYDL, display_name="gallery-dl", current_version="...", status="Detecting..."),
             cls.KEY_EJS: ComponentInfo(key=cls.KEY_EJS, display_name="EJS", current_version="...", status="Detecting...", path="Python Package (yt-dlp-ejs)"),
             cls.KEY_DENO: ComponentInfo(key=cls.KEY_DENO, display_name="Deno", current_version="...", status="Detecting..."),
             cls.KEY_FFMPEG: ComponentInfo(key=cls.KEY_FFMPEG, display_name="FFmpeg", current_version="...", status="Detecting..."),
@@ -433,11 +438,30 @@ class RuntimeManager:
                     path=str(ffmpeg_path) if ffmpeg_path else "",
                 )
 
+            def _detect_gallerydl() -> ComponentInfo:
+                from downloader.gallerydl_engine import GalleryDlEngine
+                det = GalleryDlEngine.detect_runtime(force_refresh=force_refresh)
+                is_avail = det.available
+                ver = det.version if is_avail else "Not Found"
+                status_str = "Up to date" if is_avail else "Not Found"
+                err_msg = det.error if not is_avail else ""
+                path_str = det.executable_path or ("Python Module (gallery_dl)" if det.is_python_module else "")
+
+                return ComponentInfo(
+                    key=cls.KEY_GALLERYDL,
+                    display_name="gallery-dl",
+                    current_version=ver,
+                    status=status_str,
+                    error_message=err_msg,
+                    path=path_str,
+                )
+
             # Run external binary detections concurrently
-            with ThreadPoolExecutor(max_workers=3) as executor:
+            with ThreadPoolExecutor(max_workers=4) as executor:
                 future_ytdlp = executor.submit(_detect_ytdlp)
                 future_deno = executor.submit(_detect_deno)
                 future_ffmpeg = executor.submit(_detect_ffmpeg)
+                future_gallerydl = executor.submit(_detect_gallerydl)
 
                 # In-process: EJS
                 ejs_ver = "Not Installed"
@@ -458,6 +482,7 @@ class RuntimeManager:
                 results[cls.KEY_YTDLP] = future_ytdlp.result()
                 results[cls.KEY_DENO] = future_deno.result()
                 results[cls.KEY_FFMPEG] = future_ffmpeg.result()
+                results[cls.KEY_GALLERYDL] = future_gallerydl.result()
 
             cls._cached_versions = {k: ComponentInfo(**v.__dict__) for k, v in results.items()}
             cls._save_disk_cache(results)
@@ -632,6 +657,40 @@ class RuntimeManager:
                     info.status = "Error"
                     info.error_message = err or "Unable to contact update server"
 
+            elif key == cls.KEY_GALLERYDL:
+                latest_v = ""
+                err = ""
+                # Try PyPI first
+                try:
+                    req = urllib.request.Request(cls.GALLERYDL_PYPI_API, headers=headers)
+                    with urllib.request.urlopen(req, timeout=timeout) as resp:
+                        if resp.status == 200:
+                            pypi_data = json.loads(resp.read().decode("utf-8"))
+                            latest_v = str(pypi_data.get("info", {}).get("version", ""))
+                except Exception as pypi_err:
+                    _log_runtime(f"[GALLERY-DL] PyPI check failed: {pypi_err}, trying GitHub...")
+
+                # Fallback to GitHub tag
+                if not latest_v:
+                    try:
+                        req = urllib.request.Request(cls.GALLERYDL_GITHUB_API, headers=headers)
+                        with urllib.request.urlopen(req, timeout=timeout) as resp:
+                            if resp.status == 200:
+                                data = json.loads(resp.read().decode("utf-8"))
+                                latest_v = str(data.get("tag_name", "")).lstrip("v")
+                    except Exception as gh_err:
+                        err = f"Could not check gallery-dl updates: {gh_err}"
+
+                if latest_v:
+                    info.latest_version = latest_v
+                    cur_t = parse_version(info.current_version)
+                    lat_t = parse_version(latest_v)
+                    info.has_update = lat_t > cur_t
+                    info.status = "Update available" if info.has_update else "Up to date"
+                else:
+                    info.status = "Error"
+                    info.error_message = err or "Unable to contact update server"
+
         except Exception as e:
             _log_runtime(f"[CHECK EXCEPTION] {key}: {e}")
             info.status = "Error"
@@ -681,6 +740,8 @@ class RuntimeManager:
             res = cls._install_deno_update()
         elif key == cls.KEY_FFMPEG:
             res = cls._install_ffmpeg_update()
+        elif key == cls.KEY_GALLERYDL:
+            res = cls._install_gallerydl_update()
         else:
             return False, "", f"Unknown component key: {key}"
 
@@ -702,7 +763,7 @@ class RuntimeManager:
                 if sys.platform == "win32":
                     creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
                 cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "--no-warn-script-location", "yt-dlp-ejs"]
-                proc = subprocess.run(cmd, capture_output=True, text=True, creationflags=creation_flags, timeout=120)
+                proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", creationflags=creation_flags, timeout=120)
                 if proc.returncode == 0:
                     import importlib
                     try:
@@ -828,6 +889,8 @@ class RuntimeManager:
                 [str(temp_exe), "--version"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=10,
                 creationflags=creation_flags,
             )
@@ -924,6 +987,8 @@ class RuntimeManager:
                 [str(temp_ffmpeg), "-version"],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=10,
                 creationflags=creation_flags,
             )
@@ -983,6 +1048,81 @@ class RuntimeManager:
                 except Exception:
                     pass
             return False, "", f"FFmpeg update failed: {e}"
+
+    @classmethod
+    def _install_gallerydl_update(cls) -> Tuple[bool, str, str]:
+        """Safely updates gallery-dl via pip (dev mode) or wheel extraction (frozen mode)."""
+        headers = {"User-Agent": "ChannelHarvest-Downloader/1.0"}
+        is_frozen = getattr(sys, "frozen", False)
+
+        # 1. In source mode, try pip install --upgrade gallery-dl
+        if not is_frozen:
+            try:
+                creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if sys.platform == "win32" else 0
+                cmd = [sys.executable, "-m", "pip", "install", "--upgrade", "--no-warn-script-location", "gallery-dl"]
+                proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", creationflags=creation_flags, timeout=120)
+                if proc.returncode == 0:
+                    from downloader.gallerydl_engine import GalleryDlEngine
+                    GalleryDlEngine.invalidate_cache()
+                    det = GalleryDlEngine.detect_runtime(force_refresh=True)
+                    new_ver = det.version if det.available else "Updated"
+                    _log_runtime(f"[GALLERY-DL] Updated via pip to {new_ver}")
+                    return True, new_ver, ""
+            except Exception as e:
+                _log_runtime(f"[GALLERY-DL] pip update failed: {e}, falling back to wheel download...")
+
+        # 2. Standalone wheel download to %APPDATA%/ChannelHarvest/packages/
+        try:
+            req = urllib.request.Request(cls.GALLERYDL_PYPI_API, headers=headers)
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                pypi_data = json.loads(resp.read().decode("utf-8"))
+
+            urls = pypi_data.get("urls", [])
+            whl_url = None
+            target_ver = pypi_data.get("info", {}).get("version", "Unknown")
+            for u in urls:
+                if u.get("filename", "").endswith("-none-any.whl") or u.get("filename", "").endswith(".whl"):
+                    whl_url = u.get("url")
+                    break
+
+            if not whl_url:
+                return False, "", "Could not locate compatible gallery-dl wheel on PyPI."
+
+            pkgs_dir = get_app_data_dir() / "packages"
+            pkgs_dir.mkdir(parents=True, exist_ok=True)
+            temp_whl = pkgs_dir / "temp_gallerydl.whl"
+
+            whl_req = urllib.request.Request(whl_url, headers=headers)
+            with urllib.request.urlopen(whl_req, timeout=90) as resp:
+                with open(temp_whl, "wb") as f:
+                    shutil.copyfileobj(resp, f)
+
+            with zipfile.ZipFile(temp_whl, "r") as zf:
+                for member in zf.namelist():
+                    if member.startswith("gallery_dl/") or member.startswith("gallery_dl-"):
+                        zf.extract(member, pkgs_dir)
+
+            temp_whl.unlink(missing_ok=True)
+
+            if str(pkgs_dir) not in sys.path:
+                sys.path.insert(0, str(pkgs_dir))
+
+            import importlib
+            importlib.invalidate_caches()
+            try:
+                import gallery_dl
+                importlib.reload(gallery_dl)
+            except Exception:
+                pass
+
+            from downloader.gallerydl_engine import GalleryDlEngine
+            GalleryDlEngine.invalidate_cache()
+            _log_runtime(f"[GALLERY-DL] Standalone wheel extracted to {pkgs_dir}, version: {target_ver}")
+            return True, target_ver, ""
+
+        except Exception as e:
+            _log_runtime(f"[GALLERY-DL] Install failed: {e}")
+            return False, "", f"Failed to update gallery-dl: {e}"
 
 
 # =============================================================================

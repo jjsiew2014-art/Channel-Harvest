@@ -77,29 +77,30 @@ class ThumbnailManager:
             Tuple of (exists: bool, file_path: Optional[Path])
         """
         include_id = getattr(settings, "include_video_id_in_filename", False)
+        num_prefix = getattr(settings, "number_prefix", "")
         clean_title = sanitize_filename(video.title)
         target_ext = cls.get_target_extension(settings.thumbnail_format)
 
         # 1. Check exact expected filename according to current setting
         if target_ext:
-            expected_name = resolve_media_filename(video.title, video.video_id, target_ext, include_video_id=include_id)
+            expected_name = resolve_media_filename(video.title, video.video_id, target_ext, include_video_id=include_id, target_dir=target_dir, number_prefix=num_prefix)
             exact_path = target_dir / expected_name
             if exact_path.is_file() and exact_path.stat().st_size > 0:
                 return True, exact_path
             # For JPG, also check .jpeg
             if target_ext == "jpg":
-                alt_jpeg_name = resolve_media_filename(video.title, video.video_id, "jpeg", include_video_id=include_id)
+                alt_jpeg_name = resolve_media_filename(video.title, video.video_id, "jpeg", include_video_id=include_id, target_dir=target_dir)
                 alt_jpeg = target_dir / alt_jpeg_name
                 if alt_jpeg.is_file() and alt_jpeg.stat().st_size > 0:
                     return True, alt_jpeg
 
             # Also check alternative naming (e.g. if previously downloaded with/without ID)
-            alt_name = resolve_media_filename(video.title, video.video_id, target_ext, include_video_id=not include_id)
+            alt_name = resolve_media_filename(video.title, video.video_id, target_ext, include_video_id=not include_id, target_dir=target_dir)
             alt_path = target_dir / alt_name
             if alt_path.is_file() and alt_path.stat().st_size > 0:
                 return True, alt_path
             if target_ext == "jpg":
-                alt_name2 = resolve_media_filename(video.title, video.video_id, "jpeg", include_video_id=not include_id)
+                alt_name2 = resolve_media_filename(video.title, video.video_id, "jpeg", include_video_id=not include_id, target_dir=target_dir)
                 alt_path2 = target_dir / alt_name2
                 if alt_path2.is_file() and alt_path2.stat().st_size > 0:
                     return True, alt_path2
@@ -190,7 +191,8 @@ class ThumbnailManager:
             log_callback(f"[Thumbnail] Downloading: {video.title}")
 
         # 2. Configure yt-dlp options for native thumbnail retrieval & conversion
-        stem = resolve_media_filename(video.title, video.video_id, include_video_id=include_id)
+        num_prefix = getattr(settings, "number_prefix", "")
+        stem = resolve_media_filename(video.title, video.video_id, include_video_id=include_id, target_dir=target_dir, number_prefix=num_prefix)
         outtmpl_pattern = str(target_dir / f"{stem}.%(ext)s")
 
         platform = getattr(video, "platform", "youtube")
@@ -202,16 +204,13 @@ class ThumbnailManager:
             platform=platform,
             settings=settings,
         )
+        ydl_opts.pop("paths", None)
         ydl_opts.update({
             "skip_download": True,
             "writethumbnail": True,
             "windowsfilenames": True,
             "continuedl": True,
             "outtmpl": outtmpl_pattern,
-            "paths": {
-                "home": str(target_dir),
-                "temp": str(get_temp_dir()),
-            },
         })
 
         # Add native yt-dlp thumbnail converter postprocessor if conversion requested

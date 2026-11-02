@@ -46,7 +46,7 @@ def main() -> None:
     # Configure Windows taskbar grouping and icon display
     try:
         import ctypes
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("ChannelHarvest.Downloader.App.1.0")
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("Channel Harvest")
     except Exception:
         pass
 
@@ -55,6 +55,15 @@ def main() -> None:
     app.setApplicationName("Channel Harvest")
     app.setApplicationDisplayName("Channel Harvest")
     app.setOrganizationName("ChannelHarvest")
+
+    # Guard against duplicate application launches (single-instance application)
+    from core.single_instance import SingleInstanceManager
+    single_instance = SingleInstanceManager()
+    if single_instance.is_already_running():
+        sys.exit(0)
+
+    # Clean up single instance resources when application exits
+    app.aboutToQuit.connect(single_instance.close)
 
     # Set application icon (used for taskbar and dialogs)
     app_icon = get_app_icon_file()
@@ -68,6 +77,7 @@ def main() -> None:
 
     # Instantiate and display the main window
     window = MainWindow()
+    single_instance.activate_requested.connect(window.bring_to_front)
     window.show()
 
     # Start the event loop and exit with its return code when closed

@@ -17,7 +17,7 @@ from urllib.parse import urlparse
 import yt_dlp
 from yt_dlp.utils import UnsupportedError, DownloadError, ExtractorError
 
-from core.models import VideoItem, DownloadSettings, VideoStatus
+from core.models import VideoItem, DownloadSettings, VideoStatus, ScanResult
 from core.platform.base import PlatformAdapter
 from core.platform.capabilities import PlatformCapabilities
 from core.platform.detector import PlatformDetector
@@ -136,7 +136,7 @@ class DouyinAdapter(PlatformAdapter):
     # Douyin support is temporarily frozen and disabled because its web detail endpoint
     # (/aweme/v1/web/aweme/detail/) currently returns HTTP 403 Forbidden due to ByteDance
     # server-side ArgusSecurityPlugin WAF blocking ("Blocked by ArgusSecurityPlugin Uifid Not Found").
-    # The current upstream yt-dlp versions tested (2026.08.19 bundled, nightly 2026.09.27.dev0,
+    # The current upstream yt-dlp versions tested (2026.10.26 bundled, nightly 2026.09.27.dev0,
     # and upstream master) do not resolve this problem as yt-dlp lacks an interactive verification
     # challenge solver. Douyin support should only be re-enabled after a verified upstream
     # extraction fix is available.
@@ -544,6 +544,34 @@ class DouyinAdapter(PlatformAdapter):
             log_callback(f"[SUCCESS] Successfully retrieved {len(video_items)} Douyin video(s) from creator profile.")
 
         return video_items
+
+    def scan(
+        self,
+        url: str,
+        log_callback: Optional[Callable[[str], None]] = None,
+        browser_cookies: Optional[str] = None,
+        custom_cookie_file: Optional[str] = None,
+        auth_config: Optional[PlatformAuthConfig] = None,
+    ) -> ScanResult:
+        """
+        Scans Douyin creator/video URL returning a ScanResult.
+        Platform is currently frozen and raises error via extract_entries.
+        """
+        videos = self.extract_entries(
+            url=url,
+            log_callback=log_callback,
+            browser_cookies=browser_cookies,
+            custom_cookie_file=custom_cookie_file,
+            auth_config=auth_config,
+        )
+        source_title = videos[0].channel_title if videos else ""
+        return ScanResult(
+            videos=videos,
+            source_title=source_title,
+            source_type="creator",
+            platform="douyin",
+            url=url,
+        )
 
     def extract_entries(
         self,

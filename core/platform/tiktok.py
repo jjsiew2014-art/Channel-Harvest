@@ -11,7 +11,8 @@ from urllib.parse import urlparse
 import yt_dlp
 from yt_dlp.utils import UnsupportedError, DownloadError, ExtractorError
 
-from core.models import VideoItem, DownloadSettings, VideoStatus
+from core.models import VideoItem, DownloadSettings, VideoStatus, ScanResult
+from core.availability import AvailabilityDetectorRegistry, AvailabilityStatus
 from core.platform.base import PlatformAdapter
 from core.platform.capabilities import PlatformCapabilities
 from core.platform.detector import PlatformDetector
@@ -132,6 +133,25 @@ class TikTokAdapter(PlatformAdapter):
         Extracts video entries from a TikTok video or profile using yt-dlp.
         Runs with platform authentication strictly scoped to None.
         """
+        return self.scan(
+            url=url,
+            log_callback=log_callback,
+            browser_cookies=browser_cookies,
+            custom_cookie_file=custom_cookie_file,
+            auth_config=auth_config,
+        ).videos
+
+    def scan(
+        self,
+        url: str,
+        log_callback: Optional[Callable[[str], None]] = None,
+        browser_cookies: Optional[str] = None,
+        custom_cookie_file: Optional[str] = None,
+        auth_config: Optional[Any] = None,
+    ) -> ScanResult:
+        """
+        Scans a TikTok creator profile or video URL and returns a normalized ScanResult.
+        """
         is_valid, reason = self.validate_url(url)
         if not is_valid:
             from downloader.ytdlp_engine import InvalidURLError
@@ -218,6 +238,20 @@ class TikTokAdapter(PlatformAdapter):
                 raise ExtractionError(f"TikTok extraction failed: {str(last_exception)}") from last_exception
             raise EmptyChannelError("No information could be retrieved for this TikTok URL.")
 
+        # Creator display name priority: creator -> channel -> uploader -> uploader_id -> title
+        creator_name = (
+            info.get("creator")
+            or info.get("channel")
+            or info.get("uploader")
+        )
+        username = info.get("uploader_id") or ""
+        if username and not username.startswith("@"):
+            formatted_username = f"@{username}"
+        else:
+            formatted_username = username
+
+        source_title = creator_name or formatted_username or info.get("title") or "TikTok Creator"
+
         uploader = (
             info.get("uploader")
             or info.get("uploader_id")
@@ -229,7 +263,7 @@ class TikTokAdapter(PlatformAdapter):
         else:
             uploader_tag = uploader
 
-        channel_title = uploader_tag
+        channel_title = formatted_username or uploader_tag or source_title
 
         raw_entries = info.get("entries")
         if raw_entries is not None:
@@ -244,6 +278,7 @@ class TikTokAdapter(PlatformAdapter):
 
         video_items: List[VideoItem] = []
         index_counter = 1
+        detector = AvailabilityDetectorRegistry.get_detector("tiktok")
 
         for entry in entries_list:
             if not entry:
@@ -261,6 +296,14 @@ class TikTokAdapter(PlatformAdapter):
 
             webpage_url = entry.get("webpage_url") or entry.get("url") or self.build_video_url(vid_id)
 
+            avail = detector.detect_entry(
+                entry=entry,
+                video_id=vid_id,
+                title=raw_title,
+                url=webpage_url,
+                auth_active=False,
+            )
+
             extra_meta = {
                 "uploader": uploader_tag,
                 "uploader_id": entry.get("uploader_id", ""),
@@ -272,19 +315,34 @@ class TikTokAdapter(PlatformAdapter):
                 "artist": entry.get("artist"),
             }
 
+            if avail.is_definitively_inaccessible():
+                selected = False
+                status = VideoStatus.SKIPPED
+                error_reason = avail.user_message or avail.status.value
+                if avail.status == AvailabilityStatus.PRIVATE:
+                    extra_meta["inaccessibility"] = "PRIVATE_VIDEO"
+                else:
+                    extra_meta["inaccessibility"] = "VIDEO_UNAVAILABLE"
+            else:
+                selected = True
+                status = VideoStatus.READY
+                error_reason = ""
+
             item = VideoItem(
                 index=index_counter,
                 video_id=vid_id,
                 title=raw_title,
                 duration=duration_str,
                 duration_seconds=duration_secs,
-                status=VideoStatus.READY,
+                status=status,
                 subtitle_status="—",
                 url=webpage_url,
-                selected=True,
+                selected=selected,
                 channel_title=channel_title,
                 platform="tiktok",
+                error_reason=error_reason,
                 extra_metadata=extra_meta,
+                availability=avail,
             )
             video_items.append(item)
             index_counter += 1
@@ -292,4 +350,10 @@ class TikTokAdapter(PlatformAdapter):
         if log_callback:
             log_callback(f"[SUCCESS] Successfully retrieved {len(video_items)} TikTok video(s).")
 
-        return video_items
+        return ScanResult(
+            videos=video_items,
+            source_title=source_title,
+            source_type="creator",
+            platform="tiktok",
+            url=url,
+        )

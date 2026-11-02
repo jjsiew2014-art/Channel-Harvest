@@ -6,7 +6,7 @@ Wraps existing YtDlpEngine extraction logic cleanly.
 
 from typing import List, Tuple, Optional, Callable, Dict, Any
 
-from core.models import VideoItem, DownloadSettings
+from core.models import VideoItem, DownloadSettings, ScanResult
 from core.platform.base import PlatformAdapter
 from core.platform.capabilities import PlatformCapabilities
 from core.platform.detector import PlatformDetector
@@ -56,6 +56,35 @@ class YouTubeAdapter(PlatformAdapter):
     def normalize_url(self, url: str) -> str:
         from downloader.ytdlp_engine import YtDlpEngine
         return YtDlpEngine.normalize_channel_url(url)
+
+    def scan(
+        self,
+        url: str,
+        log_callback: Optional[Callable[[str], None]] = None,
+        browser_cookies: Optional[str] = None,
+        custom_cookie_file: Optional[str] = None,
+        auth_config: Optional[Any] = None,
+    ) -> ScanResult:
+        from downloader.ytdlp_engine import YtDlpEngine
+        engine = YtDlpEngine()
+        if auth_config is None:
+            settings_dict = {}
+            if browser_cookies:
+                settings_dict["browser_cookies"] = browser_cookies
+            if custom_cookie_file:
+                settings_dict["custom_cookie_file"] = custom_cookie_file
+            auth_config = self.get_auth_config(settings=settings_dict if settings_dict else None)
+        scan_res = engine.scan_channel_entries(
+            url=url,
+            log_callback=log_callback,
+            browser_cookies=browser_cookies,
+            custom_cookie_file=custom_cookie_file,
+            auth_config=auth_config,
+        )
+        scan_res.platform = "youtube"
+        for item in scan_res.videos:
+            item.platform = "youtube"
+        return scan_res
 
     def extract_entries(
         self,
@@ -108,27 +137,31 @@ class YouTubeAdapter(PlatformAdapter):
         custom_cookie_file = ""
 
         if settings is not None:
-            if hasattr(settings, "browser_cookies"):
+            if hasattr(settings, "get") and callable(settings.get):
+                browser_cookies = settings.get("browser_cookies", "none") or "none"
+                auth_method = settings.get("auth_method", "none") or "none"
+                browser_profile = settings.get("browser_profile", "Default") or "Default"
+                custom_cookie_file = settings.get("custom_cookie_file", "") or ""
+            elif hasattr(settings, "browser_cookies"):
                 browser_cookies = getattr(settings, "browser_cookies", "none") or "none"
+                auth_method = getattr(settings, "auth_method", "none") or "none"
+                browser_profile = getattr(settings, "browser_profile", "Default") or "Default"
+                custom_cookie_file = getattr(settings, "custom_cookie_file", "") or ""
             elif isinstance(settings, dict):
                 browser_cookies = settings.get("browser_cookies", "none") or "none"
                 auth_method = settings.get("auth_method", "none") or "none"
                 browser_profile = settings.get("browser_profile", "Default") or "Default"
                 custom_cookie_file = settings.get("custom_cookie_file", "") or ""
-
-        # Read from global SettingsManager if not explicitly set
-        try:
-            sm = SettingsManager()
-            if auth_method == "none":
+        else:
+            # Read from global SettingsManager if settings not explicitly provided
+            try:
+                sm = SettingsManager()
                 auth_method = sm.get("auth_method", "none")
-            if browser_cookies == "none":
                 browser_cookies = sm.get("browser_cookies", "none")
-            if browser_profile == "Default":
                 browser_profile = sm.get("browser_profile", "Default")
-            if not custom_cookie_file:
                 custom_cookie_file = sm.get("custom_cookie_file", "")
-        except Exception:
-            pass
+            except Exception:
+                pass
 
         # Normalize auth_method if missing but browser_cookies is set
         if auth_method == "none" and browser_cookies not in ("none", "", None):
@@ -139,6 +172,15 @@ class YouTubeAdapter(PlatformAdapter):
 
         if auth_method == "custom_file" or browser_cookies == "custom_file":
             cookie_path = Path(custom_cookie_file) if custom_cookie_file else None
+            if not (cookie_path and cookie_path.is_file()):
+                # Fallback to SettingsManager if custom_cookie_file was not populated in settings object
+                try:
+                    from core.settings import SettingsManager
+                    cfg_file = SettingsManager().get("custom_cookie_file", "")
+                    if cfg_file and Path(cfg_file).is_file():
+                        cookie_path = Path(cfg_file)
+                except Exception:
+                    pass
             if cookie_path and cookie_path.is_file():
                 return PlatformAuthConfig(
                     auth_method="custom_file",

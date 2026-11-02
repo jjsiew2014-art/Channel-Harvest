@@ -19,17 +19,18 @@ class PlatformAuthConfig:
     browser_name: Optional[str] = None  # e.g., "chrome", "firefox", "edge"
     browser_profile: Optional[str] = None  # e.g., "Default"
     cookie_file: Optional[str] = None  # Valid path to Netscape cookies file
+    api_token: Optional[str] = None  # Platform API token (e.g. Meta Graph API token)
     description: str = "None"
 
     @classmethod
     def none(cls) -> "PlatformAuthConfig":
         """Returns a non-active authentication configuration."""
-        return cls(auth_method="none", description="None")
+        return cls(auth_method="none", description="None", api_token=None)
 
     @property
     def is_active(self) -> bool:
         """Returns True if this configuration contains active authentication credentials."""
-        return self.auth_method in ("browser", "custom_file")
+        return self.auth_method in ("browser", "custom_file") or bool(self.api_token)
 
     def apply_to_ydl_opts(self, opts: Dict[str, Any]) -> None:
         """Applies authentication parameters to yt-dlp options dictionary."""

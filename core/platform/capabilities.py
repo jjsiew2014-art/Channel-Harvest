@@ -24,4 +24,5 @@ class PlatformCapabilities:
     supports_channel_scan: bool = True
     supports_browser_cookies: bool = False
     supports_cookie_file: bool = False
+    supports_profile_media_archive: bool = False
     archive_prefix: str = "youtube"

@@ -12,13 +12,18 @@ from core.platform.base import PlatformAdapter
 class PlatformDetector:
     """
     Detects platform from target URL using hostname matching and path inspection.
-    Supports YouTube, TikTok, and Douyin without modifying current UI.
+    Supports YouTube, TikTok, Douyin, and Bilibili without modifying current UI.
     """
 
     # Domain patterns for known platforms
+    YOUTUBE_MUSIC_DOMAINS = ("music.youtube.com",)
     YOUTUBE_DOMAINS = ("youtube.com", "youtu.be")
     TIKTOK_DOMAINS = ("tiktok.com", "vm.tiktok.com", "vt.tiktok.com")
     DOUYIN_DOMAINS = ("douyin.com", "iesdouyin.com")
+    BILIBILI_DOMAINS = ("bilibili.com", "b23.tv")
+    FACEBOOK_DOMAINS = ("facebook.com", "fb.watch", "fb.com", "fb.me")
+    INSTAGRAM_DOMAINS = ("instagram.com", "instagr.am")
+    X_DOMAINS = ("x.com", "twitter.com")
 
     @classmethod
     def extract_url(cls, text: str) -> str:
@@ -38,7 +43,7 @@ class PlatformDetector:
     @classmethod
     def identify_platform_id(cls, url: str) -> str:
         """
-        Returns platform ID: 'youtube', 'tiktok', 'douyin', or 'unknown'.
+        Returns platform ID: 'youtube', 'tiktok', 'douyin', 'bilibili', or 'unknown'.
         """
         if not url or not isinstance(url, str):
             return "unknown"
@@ -56,6 +61,10 @@ class PlatformDetector:
             if not netloc:
                 return "unknown"
 
+            # Check YouTube Music (must precede YouTube to avoid matching .youtube.com)
+            if any(netloc == host or netloc.endswith("." + host) for host in cls.YOUTUBE_MUSIC_DOMAINS):
+                return "youtubemusic"
+
             # Check YouTube
             if any(netloc == host or netloc.endswith("." + host) for host in cls.YOUTUBE_DOMAINS):
                 return "youtube"
@@ -67,6 +76,22 @@ class PlatformDetector:
             # Check Douyin
             if any(netloc == host or netloc.endswith("." + host) for host in cls.DOUYIN_DOMAINS):
                 return "douyin"
+
+            # Check Bilibili
+            if any(netloc == host or netloc.endswith("." + host) for host in cls.BILIBILI_DOMAINS):
+                return "bilibili"
+
+            # Check Facebook
+            if any(netloc == host or netloc.endswith("." + host) for host in cls.FACEBOOK_DOMAINS):
+                return "facebook"
+
+            # Check Instagram
+            if any(netloc == host or netloc.endswith("." + host) for host in cls.INSTAGRAM_DOMAINS):
+                return "instagram"
+
+            # Check X (Twitter)
+            if any(netloc == host or netloc.endswith("." + host) for host in cls.X_DOMAINS):
+                return "x"
 
         except Exception:
             return "unknown"

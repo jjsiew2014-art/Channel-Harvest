@@ -189,7 +189,7 @@ class TestAuthChecker(unittest.TestCase):
             technical_error=f"Exception with bearer {secret_token} and SID=S-1-5-21-1234567890-1234567890-1234567890",
         )
 
-        report = res.to_diagnostic_report(ytdlp_version="2026.08.19")
+        report = res.to_diagnostic_report(ytdlp_version="2026.10.26")
 
         # Must not contain the raw secret token
         self.assertNotIn(secret_token, report)

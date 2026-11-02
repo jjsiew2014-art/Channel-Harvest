@@ -31,6 +31,32 @@ from core.models import VideoItem, VideoStatus
 from core.i18n import I18nManager, tr
 
 
+class _VideoTableInternal(QTableWidget):
+    """Subclass of QTableWidget that prevents spacebar toggling of non-checkable items."""
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Space:
+            row = self.currentRow()
+            if row >= 0:
+                item = self.item(row, VideoTableWidget.COL_SELECT)
+                if item and not (item.flags() & Qt.ItemFlag.ItemIsUserCheckable):
+                    event.accept()
+                    return
+        super().keyPressEvent(event)
+
+
+class _DurationTableWidgetItem(QTableWidgetItem):
+    """Custom QTableWidgetItem for duration that sorts by numeric seconds."""
+    def __lt__(self, other):
+        if isinstance(other, QTableWidgetItem):
+            v1 = self.data(Qt.ItemDataRole.UserRole)
+            v2 = other.data(Qt.ItemDataRole.UserRole)
+            if v1 is not None and v2 is not None:
+                try:
+                    return float(v1) < float(v2)
+                except Exception:
+                    pass
+        return super().__lt__(other)
+
 class VideoTableWidget(QWidget):
     """
     Table widget displaying scanned videos with selection checkboxes,
@@ -41,21 +67,24 @@ class VideoTableWidget(QWidget):
     """
 
     selection_changed = Signal(int, int)
+    table_cleared = Signal()
 
     # Column index constants
     COL_SELECT = 0
     COL_INDEX = 1
     COL_TITLE = 2
-    COL_DURATION = 3
-    COL_SUBTITLE = 4
-    COL_VIDEO_ID = 5  # Kept in table data for internal lookups, hidden from default view
-    COL_STATUS = 6
+    COL_TYPE = 3
+    COL_DURATION = 4
+    COL_SUBTITLE = 5
+    COL_VIDEO_ID = 6  # Kept in table data for internal lookups, hidden from default view
+    COL_STATUS = 7
 
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self._videos: List[VideoItem] = []
         self._current_platform: str = "youtube"
+        self._image_only_mode: bool = False
         self._init_ui()
         I18nManager.register_listener(self._on_language_updated)
 
@@ -71,7 +100,7 @@ class VideoTableWidget(QWidget):
         toolbar.setSpacing(8)
 
         # Counter: "0 videos found • 0 selected"
-        self.found_label = QLabel("0 videos found")
+        self.found_label = QLabel("0 media found")
         self.found_label.setStyleSheet("font-size: 13px; font-weight: 600;")
         toolbar.addWidget(self.found_label)
 
@@ -133,7 +162,7 @@ class VideoTableWidget(QWidget):
         empty_layout.setSpacing(6)
         empty_layout.setContentsMargins(20, 16, 20, 16)
 
-        self.empty_title = QLabel("No videos available")
+        self.empty_title = QLabel("No media available")
         self.empty_title.setObjectName("emptyStateTitle")
         self.empty_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.addWidget(self.empty_title)
@@ -144,9 +173,9 @@ class VideoTableWidget(QWidget):
         empty_layout.addWidget(self.empty_subtitle)
 
         # Table Widget configuration
-        self.table = QTableWidget()
-        self.table.setColumnCount(7)
-        self.table.setHorizontalHeaderLabels(["", "#", "Video Title", "Duration", "Subtitle", "Video ID", "Status"])
+        self.table = _VideoTableInternal()
+        self.table.setColumnCount(8)
+        self.table.setHorizontalHeaderLabels(["", "#", tr("header_media_title"), tr("header_media_type"), tr("header_duration"), tr("header_subtitles"), tr("header_media_id"), tr("header_status")])
         self.table.setAlternatingRowColors(True)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
@@ -155,7 +184,7 @@ class VideoTableWidget(QWidget):
         self.table.verticalHeader().setDefaultSectionSize(34)
         self.table.setShowGrid(False)
 
-        # Hide developer-level Video ID column by default
+        # Hide developer-level Media ID column by default
         self.table.setColumnHidden(self.COL_VIDEO_ID, True)
 
         # Column sizing behavior
@@ -169,8 +198,12 @@ class VideoTableWidget(QWidget):
         header.setSectionResizeMode(self.COL_INDEX, QHeaderView.ResizeMode.Fixed)
         self.table.setColumnWidth(self.COL_INDEX, 58)
 
-        # Video Title (stretches to fill remaining space)
+        # Media Title (stretches to fill remaining space)
         header.setSectionResizeMode(self.COL_TITLE, QHeaderView.ResizeMode.Stretch)
+
+        # Media Type (Photo / Video / Reel / Unknown)
+        header.setSectionResizeMode(self.COL_TYPE, QHeaderView.ResizeMode.Fixed)
+        self.table.setColumnWidth(self.COL_TYPE, 90)
 
         # Duration
         header.setSectionResizeMode(self.COL_DURATION, QHeaderView.ResizeMode.Fixed)
@@ -180,7 +213,7 @@ class VideoTableWidget(QWidget):
         header.setSectionResizeMode(self.COL_SUBTITLE, QHeaderView.ResizeMode.Fixed)
         self.table.setColumnWidth(self.COL_SUBTITLE, 150)
 
-        # Video ID (hidden, 0 width)
+        # Media ID (hidden, 0 width)
         header.setSectionResizeMode(self.COL_VIDEO_ID, QHeaderView.ResizeMode.Fixed)
         self.table.setColumnWidth(self.COL_VIDEO_ID, 0)
 
@@ -215,14 +248,66 @@ class VideoTableWidget(QWidget):
         self._current_platform = platform_id
         is_tiktok = (platform_id == "tiktok")
         is_douyin = (platform_id == "douyin")
-        self.set_subtitle_column_visible(not (is_tiktok or is_douyin))
+        is_facebook = (platform_id == "facebook")
+        is_instagram = (platform_id == "instagram")
+        is_x = (platform_id == "x")
+        self.set_subtitle_column_visible(not (is_tiktok or is_douyin or is_facebook or is_instagram or is_x))
         if hasattr(self, "empty_subtitle"):
             if is_douyin:
                 self.empty_subtitle.setText(tr("empty_subtitle_douyin"))
             elif is_tiktok:
                 self.empty_subtitle.setText(tr("empty_subtitle_tiktok"))
+            elif is_facebook:
+                self.empty_subtitle.setText(tr("empty_subtitle_facebook"))
+            elif is_instagram:
+                self.empty_subtitle.setText(tr("empty_subtitle_instagram"))
+            elif is_x:
+                self.empty_subtitle.setText(tr("empty_subtitle_x"))
             else:
                 self.empty_subtitle.setText(tr("empty_subtitle"))
+
+    @staticmethod
+    def _apply_media_type_styling(item: QTableWidgetItem, media_type: str) -> None:
+        """Applies clean semantic badges/colors to media types."""
+        font = item.font()
+        if font.pointSize() <= 0:
+            font.setPointSize(9)
+        m = (media_type or "").lower()
+        if "photo" in m or "image" in m or "图片" in m or "相片" in m or "照片" in m:
+            item.setForeground(QColor("#0284c7"))  # Sky blue
+            font.setBold(True)
+        elif "reel" in m:
+            item.setForeground(QColor("#8b5cf6"))  # Violet / Purple
+            font.setBold(True)
+        elif "video" in m or "视频" in m or "影片" in m:
+            item.setForeground(QColor("#0d9488"))  # Teal / Emerald
+            font.setBold(True)
+        else:
+            item.setForeground(QColor("#64748b"))  # Slate
+            font.setBold(False)
+        item.setFont(font)
+
+    @property
+    def videos(self) -> List[VideoItem]:
+        """Returns the current list of VideoItem instances."""
+        return self._videos
+
+    def get_selection_summary(self):
+        """Computes centralized selection summary of the currently loaded and checked media items."""
+        from core.models import SelectionSummary, MediaType
+        selected = self.get_selected_videos()
+        photo_c = sum(1 for v in selected if getattr(v, "media_type", MediaType.VIDEO) == MediaType.PHOTO)
+        reel_c = sum(1 for v in selected if getattr(v, "media_type", MediaType.VIDEO) == MediaType.REEL)
+        video_c = sum(1 for v in selected if getattr(v, "media_type", MediaType.VIDEO) == MediaType.VIDEO)
+        unknown_c = len(selected) - (photo_c + reel_c + video_c)
+        return SelectionSummary(
+            total_count=len(self._videos),
+            selected_count=len(selected),
+            photo_count=photo_c,
+            video_count=video_c,
+            reel_count=reel_c,
+            unknown_count=unknown_c,
+        )
 
     def set_subtitle_column_visible(self, visible: bool) -> None:
         """
@@ -245,57 +330,120 @@ class VideoTableWidget(QWidget):
         self.table.setRowCount(len(videos))
 
         mono_font = QFont("Consolas", 10)
+        disabled_color = QColor("#888888")
 
         for row, video in enumerate(videos):
+            is_inacc = video.is_inaccessible
+            reason_text = ""
+            if is_inacc:
+                reason_text = (
+                    video.availability.get_localized_message()
+                    if getattr(video, "availability", None)
+                    else (video.error_reason or tr("status_inaccessible"))
+                )
+
+            from core.models import MediaType
+            m_type = getattr(video, "media_type", MediaType.VIDEO)
+            is_photo = (m_type == MediaType.PHOTO)
+
             # Col 0: Checkbox
             chk_item = QTableWidgetItem()
-            chk_item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
-            chk_item.setCheckState(Qt.CheckState.Checked if video.selected else Qt.CheckState.Unchecked)
+            if is_inacc:
+                chk_item.setFlags(Qt.ItemFlag.NoItemFlags)
+                chk_item.setCheckState(Qt.CheckState.Unchecked)
+                chk_item.setToolTip(tr("avail_tooltip_disabled", reason=reason_text))
+            elif self._image_only_mode and not is_photo:
+                chk_item.setFlags(Qt.ItemFlag.NoItemFlags)
+                chk_item.setCheckState(Qt.CheckState.Unchecked)
+                chk_item.setToolTip(tr("tooltip_disabled_in_image_only_mode"))
+                video.selected = False
+            else:
+                chk_item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+                video.selected = True
+                chk_item.setCheckState(Qt.CheckState.Checked)
             chk_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             chk_item.setData(Qt.ItemDataRole.UserRole, video.video_id)
             self.table.setItem(row, self.COL_SELECT, chk_item)
 
             # Col 1: Index (#)
             idx_item = QTableWidgetItem(str(video.index))
-            idx_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            idx_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable if not is_inacc else Qt.ItemFlag.ItemIsSelectable)
             idx_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if is_inacc:
+                idx_item.setForeground(disabled_color)
             self.table.setItem(row, self.COL_INDEX, idx_item)
 
-            # Col 2: Video Title
+            # Col 2: Media Title
             title_item = QTableWidgetItem(video.title)
-            title_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-            title_item.setToolTip(f"{video.title}\n{tr('video_id_prefix', id=video.video_id)}\n{tr('url_prefix', url=video.url)}")
+            title_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable if not is_inacc else Qt.ItemFlag.ItemIsSelectable)
+            if is_inacc:
+                title_item.setForeground(disabled_color)
+                title_item.setToolTip(f"{video.title}\n{tr('avail_tooltip_disabled', reason=reason_text)}\n{tr('video_id_prefix', id=video.video_id)}\n{tr('url_prefix', url=video.url)}")
+            else:
+                title_item.setToolTip(f"{video.title}\n{tr('video_id_prefix', id=video.video_id)}\n{tr('url_prefix', url=video.url)}")
             self.table.setItem(row, self.COL_TITLE, title_item)
 
-            # Col 3: Duration
-            dur_item = QTableWidgetItem(video.duration)
-            dur_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            # Col 3: Media Type
+            from core.models import MediaType
+            m_type = getattr(video, "media_type", MediaType.VIDEO)
+            type_label = I18nManager.get_media_type_label(m_type)
+            type_item = QTableWidgetItem(type_label)
+            type_item.setData(Qt.ItemDataRole.UserRole, m_type)
+            type_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable if not is_inacc else Qt.ItemFlag.ItemIsSelectable)
+            type_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if is_inacc:
+                type_item.setForeground(disabled_color)
+            else:
+                self._apply_media_type_styling(type_item, m_type)
+            self.table.setItem(row, self.COL_TYPE, type_item)
+
+            # Col 4: Duration (formatted string or '-', numeric value in UserRole for sorting)
+            dur_str = video.formatted_duration
+            dur_numeric = video.duration_seconds if (video.duration_seconds is not None and m_type != MediaType.PHOTO) else -1
+            dur_item = _DurationTableWidgetItem(dur_str)
+            dur_item.setData(Qt.ItemDataRole.UserRole, dur_numeric)
+            dur_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable if not is_inacc else Qt.ItemFlag.ItemIsSelectable)
             dur_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if is_inacc:
+                dur_item.setForeground(disabled_color)
             self.table.setItem(row, self.COL_DURATION, dur_item)
 
             # Col 4: Subtitle
             sub_raw = getattr(video, "subtitle_status", tr("subtitle_checking")) or tr("subtitle_checking")
             sub_item = QTableWidgetItem(self._localize_sub_status(sub_raw))
             sub_item.setData(Qt.ItemDataRole.UserRole, sub_raw)
-            sub_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            sub_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable if not is_inacc else Qt.ItemFlag.ItemIsSelectable)
             sub_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._apply_subtitle_styling(sub_item, sub_raw)
+            if is_inacc:
+                sub_item.setForeground(disabled_color)
+            else:
+                self._apply_subtitle_styling(sub_item, sub_raw)
             self.table.setItem(row, self.COL_SUBTITLE, sub_item)
 
             # Col 5: Video ID (stored internally, column is hidden)
             id_item = QTableWidgetItem(video.video_id)
             id_item.setFont(mono_font)
-            id_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            id_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable if not is_inacc else Qt.ItemFlag.ItemIsSelectable)
             id_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             id_item.setToolTip(tr("youtube_id_prefix", id=video.video_id))
             self.table.setItem(row, self.COL_VIDEO_ID, id_item)
 
             # Col 6: Status
-            status_item = QTableWidgetItem(I18nManager.get_status_label(video.status))
+            status_text = I18nManager.get_status_label(video.status)
+            if is_inacc:
+                if getattr(video, "availability", None):
+                    status_text = I18nManager.get_status_label(video.availability.status.value)
+                elif video.error_reason:
+                    status_text = I18nManager.get_status_label(video.error_reason)
+            status_item = QTableWidgetItem(status_text)
             status_item.setData(Qt.ItemDataRole.UserRole, video.status)
-            status_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            status_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable if not is_inacc else Qt.ItemFlag.ItemIsSelectable)
             status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._apply_status_styling(status_item, video.status)
+            if is_inacc:
+                status_item.setForeground(disabled_color)
+                status_item.setToolTip(f"{tr('avail_tooltip_disabled', reason=reason_text)}")
+            else:
+                self._apply_status_styling(status_item, video.status)
             self.table.setItem(row, self.COL_STATUS, status_item)
 
         self.table.blockSignals(False)
@@ -316,13 +464,13 @@ class VideoTableWidget(QWidget):
         selected_ids = set()
         for row in range(self.table.rowCount()):
             item = self.table.item(row, self.COL_SELECT)
-            if item and item.checkState() == Qt.CheckState.Checked:
+            if item and item.checkState() == Qt.CheckState.Checked and (item.flags() & Qt.ItemFlag.ItemIsUserCheckable):
                 video_id = item.data(Qt.ItemDataRole.UserRole)
                 selected_ids.add(video_id)
 
         selected_videos = []
         for vid in self._videos:
-            if vid.video_id in selected_ids:
+            if vid.video_id in selected_ids and not vid.is_inaccessible:
                 vid.selected = True
                 selected_videos.append(vid)
             else:
@@ -396,6 +544,44 @@ class VideoTableWidget(QWidget):
                     status_item.setText(I18nManager.get_status_label(VideoStatus.WAITING))
                     self._apply_status_styling(status_item, VideoStatus.WAITING)
 
+    def set_image_only_mode(self, enabled: bool) -> None:
+        """
+        In Image Only mode, all non-photo items (videos, reels) are unchecked and disabled.
+        When exiting Image Only mode, non-inaccessible items become checkable again.
+        """
+        if getattr(self, "_image_only_mode", None) == enabled:
+            return
+        self._image_only_mode = enabled
+        self.table.blockSignals(True)
+        from core.models import MediaType
+        for row in range(self.table.rowCount()):
+            chk_item = self.table.item(row, self.COL_SELECT)
+            if not chk_item:
+                continue
+            vid_id = chk_item.data(Qt.ItemDataRole.UserRole)
+            vid = next((v for v in self._videos if v.video_id == vid_id), None)
+            if not vid:
+                continue
+
+            m_type = getattr(vid, "media_type", MediaType.VIDEO)
+            is_photo = (m_type == MediaType.PHOTO)
+
+            if enabled:
+                if not is_photo:
+                    vid.selected = False
+                    chk_item.setCheckState(Qt.CheckState.Unchecked)
+                    chk_item.setFlags(Qt.ItemFlag.NoItemFlags)
+                    chk_item.setToolTip(tr("tooltip_disabled_in_image_only_mode"))
+                else:
+                    if not vid.is_inaccessible:
+                        chk_item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+            else:
+                if not vid.is_inaccessible:
+                    chk_item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+                    chk_item.setToolTip(f"{vid.title}\n{tr('video_id_prefix', id=vid.video_id)}\n{tr('url_prefix', url=vid.url)}")
+        self.table.blockSignals(False)
+        self._update_counts()
+
     def select_all(self, checked: bool) -> None:
         """Selects or deselects all video rows (or visible filtered rows if search active)."""
         self.table.blockSignals(True)
@@ -405,7 +591,19 @@ class VideoTableWidget(QWidget):
             if not self.table.isRowHidden(row):
                 item = self.table.item(row, self.COL_SELECT)
                 if item:
-                    item.setCheckState(target_state)
+                    vid_id = item.data(Qt.ItemDataRole.UserRole)
+                    vid = next((v for v in self._videos if v.video_id == vid_id), None)
+                    if vid and vid.is_inaccessible:
+                        item.setCheckState(Qt.CheckState.Unchecked)
+                        vid.selected = False
+                    elif not (item.flags() & Qt.ItemFlag.ItemIsUserCheckable):
+                        item.setCheckState(Qt.CheckState.Unchecked)
+                        if vid:
+                            vid.selected = False
+                    else:
+                        item.setCheckState(target_state)
+                        if vid:
+                            vid.selected = checked
         self.table.blockSignals(False)
         self._update_counts()
 
@@ -418,6 +616,7 @@ class VideoTableWidget(QWidget):
         self.table.blockSignals(False)
         self._update_counts()
         self.view_stack.setCurrentWidget(self.empty_widget)
+        self.table_cleared.emit()
 
     def _on_search_changed(self, text: str) -> None:
         """Filters table rows in real-time by video title or video ID."""
@@ -442,6 +641,12 @@ class VideoTableWidget(QWidget):
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
         """Triggered when an individual item/checkbox state is toggled."""
         if item.column() == self.COL_SELECT:
+            vid_id = item.data(Qt.ItemDataRole.UserRole)
+            vid = next((v for v in self._videos if v.video_id == vid_id), None)
+            if vid and vid.is_inaccessible and item.checkState() == Qt.CheckState.Checked:
+                self.table.blockSignals(True)
+                item.setCheckState(Qt.CheckState.Unchecked)
+                self.table.blockSignals(False)
             self._update_counts()
 
     def _on_cell_double_clicked(self, row: int, column: int) -> None:
@@ -536,7 +741,23 @@ class VideoTableWidget(QWidget):
         video_title = title_item.text() if title_item else ""
         video_id = id_item.text() if id_item else ""
         vid_match = next((v for v in self._videos if v.video_id == video_id), None)
-        video_url = vid_match.url if (vid_match and vid_match.url) else (f"https://www.youtube.com/watch?v={video_id}" if video_id else "")
+        if vid_match and vid_match.url:
+            video_url = vid_match.url
+        elif (getattr(vid_match, "platform", None) == "facebook" or getattr(self, "_current_platform", "") == "facebook") and video_id:
+            video_url = f"https://www.facebook.com/watch/?v={video_id}"
+        elif (getattr(vid_match, "platform", None) == "instagram" or getattr(self, "_current_platform", "") == "instagram") and video_id:
+            video_url = f"https://www.instagram.com/p/{video_id}/"
+        elif (getattr(vid_match, "platform", None) == "x" or getattr(self, "_current_platform", "") == "x") and video_id:
+            raw_id = video_id.split("_")[0] if "_" in video_id else video_id
+            video_url = f"https://x.com/i/status/{raw_id}"
+        elif (getattr(vid_match, "platform", None) == "bilibili" or getattr(self, "_current_platform", "") == "bilibili") and video_id:
+            video_url = f"https://www.bilibili.com/video/{video_id}"
+        elif (getattr(vid_match, "platform", None) == "youtubemusic" or getattr(self, "_current_platform", "") == "youtubemusic") and video_id:
+            video_url = f"https://music.youtube.com/watch?v={video_id}"
+        elif (getattr(vid_match, "platform", None) == "tiktok" or getattr(self, "_current_platform", "") == "tiktok") and video_id:
+            video_url = f"https://www.tiktok.com/@video/video/{video_id}"
+        else:
+            video_url = f"https://www.youtube.com/watch?v={video_id}" if video_id else ""
 
         menu = QMenu(self)
 
@@ -622,10 +843,11 @@ class VideoTableWidget(QWidget):
         self.table.setHorizontalHeaderLabels([
             tr("header_select"),
             tr("header_index"),
-            tr("header_title"),
+            tr("header_media_title"),
+            tr("header_media_type"),
             tr("header_duration"),
             tr("header_subtitle"),
-            tr("header_video_id"),
+            tr("header_media_id"),
             tr("header_status"),
         ])
 
@@ -643,6 +865,12 @@ class VideoTableWidget(QWidget):
             self.empty_subtitle.setText(tr("empty_subtitle_douyin"))
         elif curr_plat == "tiktok":
             self.empty_subtitle.setText(tr("empty_subtitle_tiktok"))
+        elif curr_plat == "facebook":
+            self.empty_subtitle.setText(tr("empty_subtitle_facebook"))
+        elif curr_plat == "instagram":
+            self.empty_subtitle.setText(tr("empty_subtitle_instagram"))
+        elif curr_plat == "x":
+            self.empty_subtitle.setText(tr("empty_subtitle_x"))
         else:
             self.empty_subtitle.setText(tr("empty_subtitle"))
 
@@ -660,8 +888,24 @@ class VideoTableWidget(QWidget):
             # Status
             status_item = self.table.item(row, self.COL_STATUS)
             if status_item:
-                raw_status = status_item.data(Qt.ItemDataRole.UserRole) or status_item.text()
-                status_item.setText(I18nManager.get_status_label(raw_status))
+                chk_item = self.table.item(row, self.COL_SELECT)
+                vid_id = chk_item.data(Qt.ItemDataRole.UserRole) if chk_item else None
+                vid = next((v for v in self._videos if v.video_id == vid_id), None)
+                if vid and vid.is_inaccessible:
+                    if getattr(vid, "availability", None):
+                        status_text = I18nManager.get_status_label(vid.availability.status.value)
+                    elif vid.error_reason:
+                        status_text = I18nManager.get_status_label(vid.error_reason)
+                    else:
+                        status_text = tr("status_inaccessible")
+                    status_item.setText(status_text)
+                    reason_text = vid.availability.get_localized_message() if getattr(vid, "availability", None) else (vid.error_reason or tr("status_inaccessible"))
+                    status_item.setToolTip(tr("avail_tooltip_disabled", reason=reason_text))
+                    if chk_item:
+                        chk_item.setToolTip(tr("avail_tooltip_disabled", reason=reason_text))
+                else:
+                    raw_status = status_item.data(Qt.ItemDataRole.UserRole) or status_item.text()
+                    status_item.setText(I18nManager.get_status_label(raw_status))
 
     @staticmethod
     def _apply_status_styling(item: QTableWidgetItem, status: str) -> None:
@@ -673,7 +917,7 @@ class VideoTableWidget(QWidget):
         if status == VideoStatus.DOWNLOADING or "downloading" in st_lower or "下载中" in status:
             item.setForeground(QColor("#0284c7"))  # Sky blue
             font.setBold(True)
-        elif status == VideoStatus.PROCESSING or "processing" in st_lower or "处理中" in status:
+        elif status == VideoStatus.PROCESSING or "processing" in st_lower or "saving" in st_lower or "处理中" in status or "保存中" in status or "儲存中" in status:
             item.setForeground(QColor("#6366f1"))  # Indigo
             font.setBold(True)
         elif status == VideoStatus.COMPLETED or "complete" in st_lower or "已完成" in status:

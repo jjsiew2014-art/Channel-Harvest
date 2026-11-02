@@ -375,13 +375,44 @@ def get_ytdlp_binary_path() -> Optional[Path]:
     return None
 
 
+def patch_subprocess_utf8_default() -> None:
+    """
+    On Windows, Python defaults subprocess text mode to the ANSI codepage (e.g. cp1252),
+    which crashes with UnicodeDecodeError (e.g. charmap can't decode 0x9d) when child
+    processes (ffmpeg, ffprobe, yt-dlp, etc.) output UTF-8 text in reader threads.
+    This guarantees that whenever text mode is requested without explicit encoding,
+    it always safely defaults to encoding='utf-8', errors='replace'.
+    """
+    import subprocess
+    if getattr(subprocess.Popen, "_is_utf8_patched", False):
+        return
+
+    _orig_popen_init = subprocess.Popen.__init__
+
+    def _safe_popen_init(self, *args, **kwargs):
+        is_text = kwargs.get("text") or kwargs.get("universal_newlines") or kwargs.get("encoding") is not None
+        if is_text:
+            kwargs.setdefault("encoding", "utf-8")
+            kwargs.setdefault("errors", "replace")
+        return _orig_popen_init(self, *args, **kwargs)
+
+    subprocess.Popen.__init__ = _safe_popen_init
+    subprocess.Popen._is_utf8_patched = True
+
+
+# Install patch immediately upon importing core.paths
+patch_subprocess_utf8_default()
+
+
 def setup_runtime_environment() -> None:
     """
     Initializes runtime environment:
     1. Ensures cwd, TEMP/TMP environment, and tempfile are safe, writable, and non-system32.
     2. Prepends %APPDATA%/ChannelHarvest/packages to sys.path so updated packages (e.g. yt-dlp) are loaded.
     3. Prepends runtime and user-runtime directories to system PATH for child processes.
+    4. Guarantees subprocess text mode defaults to UTF-8 with replace error handling on Windows.
     """
+    patch_subprocess_utf8_default()
     ensure_safe_environment()
 
     user_pkgs = get_app_data_dir() / "packages"
@@ -401,18 +432,125 @@ def setup_runtime_environment() -> None:
             os.environ["PATH"] = f"{str(runtime_dir)}{os.pathsep}{path_str}"
 
 
-def sanitize_filename(name: str, max_length: int = 150) -> str:
+# Characters illegal in Windows filenames / path components:
+# < > : " / \ | ? * and ASCII control characters 0x00-0x1F, 0x7F-0x9F
+WINDOWS_ILLEGAL_CHAR_REGEX = re.compile(r'[<>:"/\\|?*\x00-\x1f\x7f-\x9f]')
+
+# Windows reserved device names (case-insensitive)
+WINDOWS_RESERVED_NAMES = {
+    "CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+}
+
+MAX_COMPONENT_LENGTH = 255
+MAX_WINDOWS_PATH = 260
+DEFAULT_SAFE_TITLE_LENGTH = 120
+DEFAULT_RESERVE_SUFFIX_LENGTH = 45
+
+
+def sanitize_filename(
+    name: str,
+    max_length: int = DEFAULT_SAFE_TITLE_LENGTH,
+    fallback: str = "Untitled",
+) -> str:
+    r"""
+    Centralized Windows-safe filename sanitizer.
+    1. Replaces Windows-invalid filename characters (< > : " / \ | ? *) with underscores.
+    2. Strips and replaces ASCII control characters (0x00-0x1F, 0x7F-0x9F) and lone surrogates.
+    3. Normalizes whitespace and strips trailing/leading periods and spaces.
+    4. Guards against Windows reserved device names (CON, PRN, AUX, NUL, COM1-9, LPT1-9).
+    5. Preserves legitimate Unicode text (Chinese, Japanese, Korean, Malay, emojis, accents).
+    6. Safely bounds length while respecting character boundaries to prevent Windows MAX_PATH
+       and 255-character component limits.
+    7. Provides a deterministic, safe fallback when the sanitized title is empty.
     """
-    Removes characters invalid in Windows directory and file names
-    (\\ / : * ? " < > |), trims whitespace, and strips trailing periods or spaces,
-    while preserving Chinese, Japanese, Korean, Malay, English, and emojis.
-    Safely bounds length to prevent Windows MAX_PATH errors.
-    """
-    clean = re.sub(r'[\\/*?:"<>|]', "_", name).strip()
-    clean = clean.rstrip(". ")
+    if not name or not isinstance(name, str):
+        return fallback or "Untitled"
+
+    # Remove unpaired UTF-16 surrogate characters
+    clean = re.sub(r'[\ud800-\udfff]', '', name)
+
+    # Normalize newlines and tabs to spaces
+    clean = re.sub(r'[\r\n\t]+', ' ', clean)
+
+    # Replace Windows illegal characters and control characters with '_'
+    clean = WINDOWS_ILLEGAL_CHAR_REGEX.sub('_', clean)
+
+    # Collapse multiple consecutive spaces to a single space
+    clean = re.sub(r' +', ' ', clean).strip()
+
+    # Strip trailing dots and spaces (Windows strictly forbids trailing '.' or ' ')
+    clean = clean.rstrip('. ')
+
+    # Guard against Windows reserved device names
+    # e.g. "CON", "aux.mp4", "NUL.txt", "com1"
+    if clean:
+        parts = clean.split('.', 1)
+        base = parts[0].strip().upper()
+        if base in WINDOWS_RESERVED_NAMES:
+            if len(parts) > 1:
+                clean = f"_{parts[0]}_.{parts[1]}"
+            else:
+                clean = f"_{clean}_"
+
+    # Enforce max_length while avoiding cutting on trailing spaces or periods
     if len(clean) > max_length:
-        clean = clean[:max_length].rstrip(". ")
-    return clean or "Untitled"
+        clean = clean[:max_length].rstrip('. ')
+
+    # Re-check trailing characters after truncation
+    clean = clean.rstrip('. ')
+
+    # If completely empty or only underscores/spaces after sanitization, return safe fallback
+    if not clean or not clean.strip('._ '):
+        return fallback or "Untitled"
+
+    return clean
+
+
+def sanitize_path_component(
+    name: str,
+    max_length: int = 80,
+    fallback: str = "folder",
+) -> str:
+    """
+    Sanitizes directory names / path components (e.g. channel folder, video folder)
+    to safe Windows length and character constraints.
+    """
+    return sanitize_filename(name, max_length=max_length, fallback=fallback)
+
+
+def calculate_safe_stem_length(
+    target_dir: Optional[Path] = None,
+    suffix: str = "",
+    ext: str = "",
+    reserve_extra: int = 0,
+    reserve_temp_len: int = DEFAULT_RESERVE_SUFFIX_LENGTH,
+) -> int:
+    """
+    Computes a safe maximum title/stem length for the given target directory and output parameters.
+    Guarantees:
+    1. Single component limit: stem + suffix + ext + format_suffix + .part <= 255 chars.
+    2. Path budget: full path length <= 260 chars whenever possible.
+    """
+    ext_len = len(ext.lstrip(".")) + 1 if ext else 0
+    fixed_overhead = len(suffix) + ext_len + reserve_temp_len + reserve_extra
+
+    # Ceiling from NTFS 255-character component limit
+    component_budget = MAX_COMPONENT_LENGTH - fixed_overhead
+
+    # Ceiling from standard Windows MAX_PATH (260 chars)
+    if target_dir is not None:
+        try:
+            target_str = str(target_dir.resolve())
+        except Exception:
+            target_str = str(target_dir)
+        path_budget = MAX_WINDOWS_PATH - 1 - len(target_str) - fixed_overhead
+        safe_len = min(component_budget, path_budget, DEFAULT_SAFE_TITLE_LENGTH)
+    else:
+        safe_len = min(component_budget, DEFAULT_SAFE_TITLE_LENGTH)
+
+    return max(30, safe_len)
 
 
 def resolve_video_output_dir(
@@ -423,13 +561,15 @@ def resolve_video_output_dir(
     video_id: str,
     create_individual_video_folders: bool,
     duplicate_titles_in_queue: Optional[Set[str]] = None,
+    number_prefix: str = "",
+    custom_folder_name: Optional[str] = None,
 ) -> Path:
     """
     Centralized resolver for video output directory.
     Hierarchy:
         download_root
-            ↓ (if create_channel_folder and channel_title)
-        channel_subfolder
+            ↓ (if custom_folder_name or (create_channel_folder and channel_title))
+        custom_folder or channel_subfolder
             ↓ (if create_individual_video_folders)
         individual_video_folder
 
@@ -438,9 +578,12 @@ def resolve_video_output_dir(
         or if a directory already exists on disk containing files belonging to a
         different video ID, appends ' [VIDEO_ID]' to ensure deterministic isolation.
     """
-    # 1. Base / Channel level
-    if create_channel_folder and channel_title:
-        clean_channel = sanitize_filename(channel_title)
+    # 1. Base / Custom folder / Channel level (bounded safely to 80-120 chars)
+    if custom_folder_name and custom_folder_name.strip():
+        clean_custom = sanitize_path_component(custom_folder_name.strip(), max_length=120, fallback="custom_folder")
+        parent_dir = base_download_dir / clean_custom
+    elif create_channel_folder and channel_title:
+        clean_channel = sanitize_path_component(channel_title, max_length=80, fallback="channel")
         parent_dir = base_download_dir / clean_channel
     else:
         parent_dir = base_download_dir
@@ -448,9 +591,13 @@ def resolve_video_output_dir(
     if not create_individual_video_folders:
         return parent_dir
 
-    # 2. Individual video folder level
-    clean_title = sanitize_filename(video_title)
-    id_tagged_dir = parent_dir / f"{clean_title} [{video_id}]"
+    # 2. Individual video folder level (bounded safely to 80 chars)
+    prefix = number_prefix or ""
+    fallback_folder = f"video_{video_id}" if video_id else "video"
+    reserve_extra = len(prefix)
+    clean_title = sanitize_path_component(video_title, max_length=max(30, 80 - reserve_extra), fallback=fallback_folder)
+    folder_base = f"{prefix}{clean_title}"
+    id_tagged_dir = parent_dir / f"{folder_base} [{video_id}]"
 
     # If this video already has an ID-tagged folder from a previous collision run, reuse it
     if id_tagged_dir.is_dir():
@@ -459,10 +606,10 @@ def resolve_video_output_dir(
     # Check duplicate in queue
     is_dup_in_queue = bool(
         duplicate_titles_in_queue
-        and (video_title in duplicate_titles_in_queue or clean_title in duplicate_titles_in_queue)
+        and (video_title in duplicate_titles_in_queue or clean_title in duplicate_titles_in_queue or folder_base in duplicate_titles_in_queue)
     )
 
-    candidate_dir = parent_dir / clean_title
+    candidate_dir = parent_dir / folder_base
 
     # Check collision on disk: if candidate_dir exists and contains files for another video ID
     collision_on_disk = False
@@ -470,7 +617,7 @@ def resolve_video_output_dir(
         try:
             for item in candidate_dir.iterdir():
                 if item.is_file():
-                    # Look for [video_id] pattern in existing filenames (supports YouTube & TikTok IDs)
+                    # Look for [video_id] pattern in existing filenames (supports YouTube, TikTok, Facebook IDs)
                     m = re.search(r'\[([a-zA-Z0-9_-]{6,32})\]', item.name)
                     if m and m.group(1) != video_id:
                         collision_on_disk = True
@@ -479,11 +626,38 @@ def resolve_video_output_dir(
             pass
 
     if is_dup_in_queue or collision_on_disk:
-        folder_name = f"{clean_title} [{video_id}]"
+        folder_name = f"{folder_base} [{video_id}]"
     else:
-        folder_name = clean_title
+        folder_name = folder_base
 
     return parent_dir / folder_name
+
+
+def format_number_prefix(
+    index: int,
+    max_index: Optional[int] = None,
+    pad_width: Optional[int] = None,
+) -> str:
+    """
+    Formats a 1-based scan order index into a filename prefix (e.g. '01_', '02_').
+    Supports numbers up to 6 digits (up to 999,999 and beyond).
+
+    Padding width rules:
+    - If pad_width is explicitly provided and >= 2, uses pad_width.
+    - Otherwise, if max_index is provided and > 0, width is max(2, min(6, len(str(max_index)))).
+    - Defaults to width 2 (e.g. 01 to 99).
+    """
+    if index is None or index <= 0:
+        index = 1
+
+    if pad_width is not None and pad_width >= 2:
+        width = pad_width
+    elif max_index is not None and max_index > 0:
+        width = max(2, min(6, len(str(max_index))))
+    else:
+        width = 2
+
+    return f"{index:0{width}d}_"
 
 
 def resolve_media_filename(
@@ -492,6 +666,8 @@ def resolve_media_filename(
     ext: str = "",
     include_video_id: bool = False,
     suffix: str = "",
+    target_dir: Optional[Path] = None,
+    number_prefix: str = "",
 ) -> str:
     """
     Centralized filename generator for all video-related outputs:
@@ -501,11 +677,22 @@ def resolve_media_filename(
     When include_video_id is False: '<clean_title><suffix>.<ext>'
     If ext is empty, returns the stem without trailing dot.
     """
-    clean_title = sanitize_filename(title)
+    prefix = number_prefix or ""
+    reserve_for_id = len(f" [{video_id}]") if (include_video_id and video_id) else 0
+    reserve_for_prefix = len(prefix)
+    safe_title_len = calculate_safe_stem_length(
+        target_dir=target_dir,
+        suffix=suffix,
+        ext=ext,
+        reserve_extra=reserve_for_id + reserve_for_prefix,
+    )
+    fallback_title = f"video_{video_id}" if video_id else "Untitled"
+    clean_title = sanitize_filename(title, max_length=safe_title_len, fallback=fallback_title)
+
     if include_video_id and video_id:
-        stem = f"{clean_title} [{video_id}]{suffix}"
+        stem = f"{prefix}{clean_title} [{video_id}]{suffix}"
     else:
-        stem = f"{clean_title}{suffix}"
+        stem = f"{prefix}{clean_title}{suffix}"
 
     if ext:
         ext_clean = ext.lstrip(".")
@@ -517,17 +704,83 @@ def resolve_video_outtmpl(
     target_dir: Path,
     include_video_id: bool = False,
     suffix: str = "",
+    number_prefix: str = "",
 ) -> str:
     """
     Centralized yt-dlp outtmpl pattern generator.
+    When number_prefix is provided: '<target_dir>/<number_prefix>%(title)s...'
     When include_video_id is True: '<target_dir>/%(title)s [%(id)s]<suffix>.%(ext)s'
     When include_video_id is False: '<target_dir>/%(title)s<suffix>.%(ext)s'
     """
+    prefix = number_prefix or ""
     if include_video_id:
-        tmpl = f"%(title)s [%(id)s]{suffix}.%(ext)s"
+        tmpl = f"{prefix}%(title)s [%(id)s]{suffix}.%(ext)s"
     else:
-        tmpl = f"%(title)s{suffix}.%(ext)s"
+        tmpl = f"{prefix}%(title)s{suffix}.%(ext)s"
     return str(target_dir / tmpl)
+
+
+def validate_output_path(
+    target_dir: Path,
+    filename: Optional[str] = None,
+    check_writable: bool = True,
+) -> Tuple[bool, Optional[str]]:
+    """
+    Validates that target_dir and optional filename meet Windows filesystem requirements:
+    1. Directory exists or can be created.
+    2. Directory is not inside protected system roots (e.g. C:\\Windows, System32).
+    3. Directory is writable by the current process.
+    4. If filename is provided:
+       - No single component exceeds MAX_COMPONENT_LENGTH (255 characters).
+       - Filename does not contain illegal characters (<>:"/\\|?* or control chars).
+       - Filename does not use a Windows reserved device name (CON, PRN, AUX, etc.).
+       - Filename does not have trailing dots or spaces.
+       - Total path length does not exceed MAX_WINDOWS_PATH (260 characters).
+    Returns:
+        (is_valid: bool, error_message: Optional[str])
+    """
+    if not target_dir:
+        return False, "Target directory cannot be empty."
+
+    if is_protected_system_dir(target_dir):
+        return False, f"Target directory '{target_dir}' is a protected Windows system directory."
+
+    try:
+        target_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        return False, f"Cannot create directory '{target_dir}': {e}"
+
+    if check_writable:
+        probe = target_dir / f".ch_val_{os.getpid()}_{int(time.time() * 1000)}.tmp"
+        try:
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink(missing_ok=True)
+        except Exception as e:
+            return False, f"Directory '{target_dir}' is not writable: {e}"
+
+    if filename:
+        if len(filename) > MAX_COMPONENT_LENGTH:
+            return False, f"Filename component exceeds Windows limit of {MAX_COMPONENT_LENGTH} characters (length={len(filename)}): '{filename[:30]}...'"
+
+        if WINDOWS_ILLEGAL_CHAR_REGEX.search(filename):
+            return False, f"Filename contains invalid Windows characters: '{filename}'"
+
+        if filename.endswith(" ") or filename.endswith("."):
+            return False, f"Filename cannot end with a period or space on Windows: '{filename}'"
+
+        base = filename.split('.')[0].strip().upper()
+        if base in WINDOWS_RESERVED_NAMES:
+            return False, f"Filename uses a reserved Windows device name ({base}): '{filename}'"
+
+        try:
+            full_path_str = str((target_dir / filename).resolve())
+        except Exception:
+            full_path_str = str(target_dir / filename)
+
+        if len(full_path_str) >= MAX_WINDOWS_PATH:
+            return False, f"Full path exceeds Windows MAX_PATH ({MAX_WINDOWS_PATH} characters, length={len(full_path_str)}): '{full_path_str}'"
+
+    return True, None
 
 
 def should_include_video_id(

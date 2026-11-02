@@ -117,6 +117,23 @@ QLabel#summaryFailedVal {
     color: #dc2626;
 }
 
+QLabel#summaryLyricsVal {
+    font-weight: 700;
+    color: #d97706;
+}
+
+QFrame#summaryLyricsNoticeBox {
+    background-color: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 8px;
+}
+
+QLabel#summaryLyricsNoticeText {
+    color: #92400e;
+    font-size: 12px;
+    font-weight: 500;
+}
+
 QLabel#summaryFolderInfo {
     color: #475569;
     font-size: 12px;
@@ -210,6 +227,48 @@ QGroupBox#videosGroupBox {
 QGroupBox#videosGroupBox::title {
     color: #0052a3;
     background-color: #eff6ff;
+}
+
+/* Source Title Row inside AVAILABLE VIDEOS */
+QFrame#sourceTitleCard {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 3px 10px;
+}
+
+QLabel#sourceTitleBadge {
+    font-size: 11px;
+    font-weight: 700;
+    color: #1e40af;
+    letter-spacing: 0.5px;
+    background: transparent;
+}
+
+QLabel#sourceTitleSeparator {
+    font-size: 11px;
+    font-weight: 700;
+    color: #94a3b8;
+    background: transparent;
+}
+
+QLabel#sourceTitleValue {
+    font-size: 12px;
+    font-weight: 600;
+    color: #0f172a;
+    background: transparent;
+}
+
+QLabel#sourceTitleValue[isPlaceholder="true"] {
+    color: #64748b;
+    font-style: italic;
+    font-weight: 500;
+}
+
+QLabel#sourceTitleValue[isPlaceholder="false"] {
+    color: #0f172a;
+    font-style: normal;
+    font-weight: 600;
 }
 
 QGroupBox#downloadGroupBox {
@@ -453,6 +512,34 @@ QPushButton#primaryButton:disabled, QPushButton#scanButton:disabled {
     color: #ffffff;
 }
 
+/* Stop Scan Button (Prominent Red) */
+QPushButton#stopScanButton {
+    background-color: #dc2626;
+    border: 1px solid #b91c1c;
+    border-radius: 6px;
+    color: #ffffff;
+    font-weight: 600;
+    padding: 6px 18px;
+}
+
+QPushButton#stopScanButton:hover {
+    background-color: #b91c1c;
+    border-color: #991b1b;
+    color: #ffffff;
+}
+
+QPushButton#stopScanButton:pressed {
+    background-color: #991b1b;
+    border-color: #7f1d1d;
+    color: #ffffff;
+}
+
+QPushButton#stopScanButton:disabled {
+    background-color: #fca5a5;
+    border-color: #fca5a5;
+    color: #ffffff;
+}
+
 /* Main Start Download Button (Primary Blue) */
 QPushButton#downloadButton {
     background-color: #0066cc;
@@ -591,7 +678,7 @@ QPushButton#openFolderButton:disabled, QPushButton#secondaryButton:disabled {
 }
 
 /* Settings Button (Top-Right Header) */
-QPushButton#settingsButton {
+QPushButton#settingsButton, QPushButton#activityLogButton {
     background-color: #ffffff;
     border: 1px solid #cbd5e1;
     border-radius: 6px;
@@ -602,12 +689,12 @@ QPushButton#settingsButton {
     max-height: 30px;
 }
 
-QPushButton#settingsButton:hover {
+QPushButton#settingsButton:hover, QPushButton#activityLogButton:hover {
     background-color: #f1f5f9;
     border-color: #94a3b8;
 }
 
-QPushButton#settingsButton:pressed {
+QPushButton#settingsButton:pressed, QPushButton#activityLogButton:pressed {
     background-color: #e2e8f0;
 }
 
@@ -650,6 +737,23 @@ QFrame#componentCard {
 QFrame#componentCard QLabel {
     background-color: transparent;
     border: none;
+}
+
+QFrame#generalCard {
+    background-color: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+}
+
+QFrame#generalCard QLabel {
+    background-color: transparent;
+    border: none;
+}
+
+QFrame#cardInnerDivider {
+    background-color: #f1f5f9;
+    border: none;
+    max-height: 1px;
 }
 
 /* Divider lines */
@@ -991,6 +1095,23 @@ QLabel#summaryFailedVal {
     color: #ef4444;
 }
 
+QLabel#summaryLyricsVal {
+    font-weight: 700;
+    color: #fbbf24;
+}
+
+QFrame#summaryLyricsNoticeBox {
+    background-color: rgba(245, 158, 11, 0.12);
+    border: 1px solid rgba(245, 158, 11, 0.35);
+    border-radius: 8px;
+}
+
+QLabel#summaryLyricsNoticeText {
+    color: #fde68a;
+    font-size: 12px;
+    font-weight: 500;
+}
+
 QLabel#summaryFolderInfo {
     color: #94a3b8;
     font-size: 12px;
@@ -1084,6 +1205,48 @@ QGroupBox#videosGroupBox {
 QGroupBox#videosGroupBox::title {
     color: #38bdf8;
     background-color: #1a2942;
+}
+
+/* Source Title Row inside AVAILABLE VIDEOS */
+QFrame#sourceTitleCard {
+    background-color: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 6px;
+    padding: 3px 10px;
+}
+
+QLabel#sourceTitleBadge {
+    font-size: 11px;
+    font-weight: 700;
+    color: #60a5fa;
+    letter-spacing: 0.5px;
+    background: transparent;
+}
+
+QLabel#sourceTitleSeparator {
+    font-size: 11px;
+    font-weight: 700;
+    color: #64748b;
+    background: transparent;
+}
+
+QLabel#sourceTitleValue {
+    font-size: 12px;
+    font-weight: 600;
+    color: #f8fafc;
+    background: transparent;
+}
+
+QLabel#sourceTitleValue[isPlaceholder="true"] {
+    color: #94a3b8;
+    font-style: italic;
+    font-weight: 500;
+}
+
+QLabel#sourceTitleValue[isPlaceholder="false"] {
+    color: #f8fafc;
+    font-style: normal;
+    font-weight: 600;
 }
 
 QGroupBox#downloadGroupBox {
@@ -1327,6 +1490,34 @@ QPushButton#primaryButton:disabled, QPushButton#scanButton:disabled {
     color: #64748b;
 }
 
+/* Stop Scan Button (Prominent Red) */
+QPushButton#stopScanButton {
+    background-color: #dc2626;
+    border: 1px solid #ef4444;
+    border-radius: 6px;
+    color: #ffffff;
+    font-weight: 600;
+    padding: 6px 18px;
+}
+
+QPushButton#stopScanButton:hover {
+    background-color: #b91c1c;
+    border-color: #dc2626;
+    color: #ffffff;
+}
+
+QPushButton#stopScanButton:pressed {
+    background-color: #991b1b;
+    border-color: #b91c1c;
+    color: #ffffff;
+}
+
+QPushButton#stopScanButton:disabled {
+    background-color: #7f1d1d;
+    border-color: #7f1d1d;
+    color: #94a3b8;
+}
+
 /* Main Start Download Button (Primary Blue) */
 QPushButton#downloadButton {
     background-color: #0284c7;
@@ -1462,7 +1653,7 @@ QPushButton#openFolderButton:disabled, QPushButton#secondaryButton:disabled {
 }
 
 /* Settings Button (Top-Right Header) */
-QPushButton#settingsButton {
+QPushButton#settingsButton, QPushButton#activityLogButton {
     background-color: #1e293b;
     border: 1px solid #334155;
     border-radius: 6px;
@@ -1473,12 +1664,12 @@ QPushButton#settingsButton {
     max-height: 30px;
 }
 
-QPushButton#settingsButton:hover {
+QPushButton#settingsButton:hover, QPushButton#activityLogButton:hover {
     background-color: #334155;
     border-color: #475569;
 }
 
-QPushButton#settingsButton:pressed {
+QPushButton#settingsButton:pressed, QPushButton#activityLogButton:pressed {
     background-color: #273549;
 }
 
@@ -1521,6 +1712,23 @@ QFrame#componentCard {
 QFrame#componentCard QLabel {
     background-color: transparent;
     border: none;
+}
+
+QFrame#generalCard {
+    background-color: #14171d;
+    border: 1px solid #282c34;
+    border-radius: 8px;
+}
+
+QFrame#generalCard QLabel {
+    background-color: transparent;
+    border: none;
+}
+
+QFrame#cardInnerDivider {
+    background-color: #21252d;
+    border: none;
+    max-height: 1px;
 }
 
 /* Divider lines */
@@ -1812,8 +2020,11 @@ def get_font_family(lang: Optional[str] = None) -> str:
     """Returns the typography font stack based on the active application language or specified lang code."""
     try:
         from core.i18n import I18nManager
-        is_zh = (lang == I18nManager.LANG_ZH) if lang is not None else I18nManager.is_chinese()
-        if is_zh:
+        if lang is None:
+            lang = I18nManager.get_language()
+        if lang == I18nManager.LANG_ZH_TW:
+            return '"Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans TC", "Segoe UI", "Segoe UI Variable", -apple-system, BlinkMacSystemFont, Roboto, sans-serif'
+        if lang == I18nManager.LANG_ZH:
             return '"Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", "Segoe UI Variable", -apple-system, BlinkMacSystemFont, Roboto, sans-serif'
     except Exception:
         pass
@@ -1912,7 +2123,12 @@ class ThemeManager:
             from PySide6.QtGui import QFont
             try:
                 from core.i18n import I18nManager
-                font_family = "Noto Sans SC" if I18nManager.is_chinese() else "Segoe UI"
+                if I18nManager.is_traditional_chinese():
+                    font_family = "Microsoft JhengHei UI"
+                elif I18nManager.is_simplified_chinese():
+                    font_family = "Noto Sans SC"
+                else:
+                    font_family = "Segoe UI"
                 base_font = QFont(font_family, 9)
                 if base_font.pointSize() <= 0:
                     base_font.setPointSize(9)

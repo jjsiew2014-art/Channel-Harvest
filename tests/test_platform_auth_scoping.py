@@ -405,12 +405,14 @@ class TestPlatformAuthScoping(unittest.TestCase):
                 self.assertTrue(mock_worker.called)
 
                 # Test TikTok URL scan
+                window._set_ui_state("idle")
                 mock_worker.reset_mock()
                 window.url_input.setText("https://www.tiktok.com/@creator")
                 window._on_scan_clicked()
                 self.assertTrue(mock_worker.called)
 
                 # Test Douyin URL scan (temporarily enabled to verify adapter lookup without UnboundLocalError)
+                window._set_ui_state("idle")
                 mock_worker.reset_mock()
                 PlatformRegistry.set_platform_available("douyin", True)
                 try:

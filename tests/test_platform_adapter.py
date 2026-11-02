@@ -50,6 +50,17 @@ class TestPlatformAdapterArchitecture(unittest.TestCase):
         for u in urls:
             self.assertEqual(PlatformDetector.identify_platform_id(u), "douyin", f"Failed for {u}")
 
+    def test_platform_detector_bilibili(self):
+        """Verify Bilibili URLs are detected as 'bilibili'."""
+        urls = [
+            "https://www.bilibili.com/video/BV1xx411c7mD",
+            "https://bilibili.com/video/av170001",
+            "https://space.bilibili.com/393717148",
+            "https://b23.tv/BV1xx411c7mD",
+        ]
+        for u in urls:
+            self.assertEqual(PlatformDetector.identify_platform_id(u), "bilibili", f"Failed for {u}")
+
     def test_platform_detector_unknown(self):
         """Verify unsupported or invalid URLs return 'unknown'."""
         urls = [
@@ -60,6 +71,17 @@ class TestPlatformAdapterArchitecture(unittest.TestCase):
         ]
         for u in urls:
             self.assertEqual(PlatformDetector.identify_platform_id(u), "unknown", f"Failed for {u}")
+
+    def test_bilibili_adapter_registration(self):
+        """Verify BilibiliAdapter is registered in the PlatformRegistry."""
+        adapter = PlatformRegistry.get_adapter("bilibili")
+        self.assertIsNotNone(adapter)
+        self.assertEqual(adapter.platform_id, "bilibili")
+        self.assertEqual(adapter.display_name, "Bilibili")
+        self.assertTrue(PlatformRegistry.is_available("bilibili"))
+
+        matched = PlatformRegistry.get_adapter_for_url("https://www.bilibili.com/video/BV1xx411c7mD")
+        self.assertIs(matched, adapter)
 
     def test_youtube_adapter_registration(self):
         """Verify YouTubeAdapter is registered in the PlatformRegistry."""

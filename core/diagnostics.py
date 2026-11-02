@@ -282,7 +282,7 @@ class DiagnosticReporter:
         ffmpeg_status = r_statuses.get("ffmpeg", "Up to date" if is_ffmpeg_ok else "Not Found")
 
         # 4. Application Configuration
-        mode = sm.get("download_mode", "Video + Audio")
+        mode = sm.get("download_mode", "Video Only")
         video_fmt = sm.get("format", "MOV")
         video_res = sm.get("quality", "1080p")
         audio_fmt = sm.get("audio_format", "WAV")

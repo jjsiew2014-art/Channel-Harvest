@@ -6,7 +6,7 @@ Abstract base class and interface definition for Channel Harvest platform adapte
 from abc import ABC, abstractmethod
 from typing import List, Tuple, Optional, Callable, Dict, Any
 
-from core.models import VideoItem, DownloadSettings
+from core.models import VideoItem, DownloadSettings, ScanResult
 from core.platform.capabilities import PlatformCapabilities
 
 
@@ -77,6 +77,38 @@ class PlatformAdapter(ABC):
     ) -> List[VideoItem]:
         """Scans the channel, user page, playlist, or single video and returns VideoItems."""
         pass
+
+    def scan(
+        self,
+        url: str,
+        log_callback: Optional[Callable[[str], None]] = None,
+        browser_cookies: Optional[str] = None,
+        custom_cookie_file: Optional[str] = None,
+        auth_config: Optional[Any] = None,
+    ) -> ScanResult:
+        """
+        Scans the source URL and returns a normalized ScanResult containing the videos
+        and the human-readable source title (channel, creator, playlist).
+        Default implementation delegates to extract_entries and derives
+        source_title from the first entry's channel_title if available.
+        """
+        videos = self.extract_entries(
+            url=url,
+            log_callback=log_callback,
+            browser_cookies=browser_cookies,
+            custom_cookie_file=custom_cookie_file,
+            auth_config=auth_config,
+        )
+        source_title = ""
+        if videos:
+            source_title = videos[0].channel_title or ""
+        return ScanResult(
+            videos=videos,
+            source_title=source_title,
+            source_type="channel",
+            platform=self.platform_id,
+            url=url,
+        )
 
     @abstractmethod
     def build_video_url(self, video_id: str, original_url: str = "") -> str:

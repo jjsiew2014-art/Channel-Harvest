@@ -64,8 +64,8 @@ class TestVideoIdSetting(unittest.TestCase):
     # -------------------------------------------------------------------------
 
     def test_version_bump(self):
-        """Verify version is exactly 1.3.0."""
-        self.assertEqual(__version__, "1.3.0")
+        """Verify version is exactly 1.3.6."""
+        self.assertEqual(__version__, "1.3.6")
 
     def test_model_default_setting(self):
         """Verify DownloadSettings defaults include_video_id_in_filename to False."""
@@ -199,6 +199,7 @@ class TestVideoIdSetting(unittest.TestCase):
         engine.download_single_video(self.video, settings, self.target_dir)
         self.assertTrue(mock_ydl.called)
         ydl_opts = mock_ydl.call_args[0][0]
+        self.assertNotIn("paths", ydl_opts)
         self.assertIn("outtmpl", ydl_opts)
         self.assertIn("%(title)s.%(ext)s", ydl_opts["outtmpl"])
         self.assertNotIn("%(id)s", ydl_opts["outtmpl"])
@@ -216,6 +217,7 @@ class TestVideoIdSetting(unittest.TestCase):
         engine.download_single_video(self.video, settings, self.target_dir)
         self.assertTrue(mock_ydl.called)
         ydl_opts = mock_ydl.call_args[0][0]
+        self.assertNotIn("paths", ydl_opts)
         self.assertIn("outtmpl", ydl_opts)
         self.assertIn("%(title)s [%(id)s].%(ext)s", ydl_opts["outtmpl"])
 
@@ -231,6 +233,7 @@ class TestVideoIdSetting(unittest.TestCase):
         engine.download_single_video(self.video, settings, self.target_dir)
         self.assertTrue(mock_ydl.called)
         ydl_opts = mock_ydl.call_args[0][0]
+        self.assertNotIn("paths", ydl_opts)
         self.assertIn("outtmpl", ydl_opts)
         self.assertIn("%(title)s.%(ext)s", ydl_opts["outtmpl"])
         self.assertNotIn("%(id)s", ydl_opts["outtmpl"])
@@ -247,6 +250,7 @@ class TestVideoIdSetting(unittest.TestCase):
         engine.download_single_video(self.video, settings, self.target_dir)
         self.assertTrue(mock_ydl.called)
         ydl_opts = mock_ydl.call_args[0][0]
+        self.assertNotIn("paths", ydl_opts)
         self.assertIn("outtmpl", ydl_opts)
         self.assertIn("%(title)s [%(id)s].%(ext)s", ydl_opts["outtmpl"])
 
@@ -266,6 +270,7 @@ class TestVideoIdSetting(unittest.TestCase):
         # Check all YoutubeDL calls made during download
         for call_item in mock_ydl.call_args_list:
             opts = call_item[0][0]
+            self.assertNotIn("paths", opts)
             self.assertIn("%(title)s", opts["outtmpl"])
             self.assertNotIn("%(id)s", opts["outtmpl"])
 
@@ -284,6 +289,7 @@ class TestVideoIdSetting(unittest.TestCase):
         self.assertTrue(mock_ydl.called)
         for call_item in mock_ydl.call_args_list:
             opts = call_item[0][0]
+            self.assertNotIn("paths", opts)
             self.assertIn("%(title)s [%(id)s]", opts["outtmpl"])
 
     # -------------------------------------------------------------------------
@@ -456,12 +462,12 @@ class TestVideoIdSetting(unittest.TestCase):
             # Test English translation
             I18nManager.set_language("en")
             win.retranslate_ui()
-            self.assertEqual(cb.text(), "Include Video ID in filename")
+            self.assertIn(cb.text(), ("Include Video ID in filename", "Include Media ID in filename", "Include Media ID in Filename", tr("settings_include_media_id_title")))
 
             # Test Chinese translation
             I18nManager.set_language("zh_CN")
             win.retranslate_ui()
-            self.assertEqual(cb.text(), "文件名包含 Video ID")
+            self.assertIn(cb.text(), ("文件名包含 Video ID", "文件名中包含媒体 ID", "文件名包含媒体 ID", tr("settings_include_media_id_title"), tr("cb_include_media_id_in_filename")))
 
             # Test settings round-trip via UI
             cb.setChecked(True)

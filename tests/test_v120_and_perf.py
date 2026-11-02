@@ -27,23 +27,23 @@ class TestVersion120AndPerf(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication(sys.argv)
 
     def test_version_number(self):
-        """Verify version is exactly 1.3.0."""
-        self.assertEqual(__version__, "1.3.0")
+        """Verify version is exactly 1.3.6."""
+        self.assertEqual(__version__, "1.3.6")
 
         # Verify version_info.txt
         root = Path(__file__).resolve().parent.parent
         vinfo_path = root / "version_info.txt"
         self.assertTrue(vinfo_path.exists())
         vinfo_text = vinfo_path.read_text(encoding="utf-8")
-        self.assertIn("filevers=(1, 3, 0, 0)", vinfo_text)
-        self.assertIn("prodvers=(1, 3, 0, 0)", vinfo_text)
-        self.assertIn("1.3.0.0", vinfo_text)
+        self.assertIn("filevers=(1, 3, 6, 0)", vinfo_text)
+        self.assertIn("prodvers=(1, 3, 6, 0)", vinfo_text)
+        self.assertIn("1.3.6.0", vinfo_text)
 
         # Verify installer script
         iss_path = root / "installer" / "ChannelHarvest.iss"
         self.assertTrue(iss_path.exists())
         iss_text = iss_path.read_text(encoding="utf-8")
-        self.assertIn('#define MyAppVersion "1.3.0"', iss_text)
+        self.assertIn('#define MyAppVersion "1.3.6"', iss_text)
 
     def test_runtime_manager_caching(self):
         """Verify RuntimeManager caches results and invalidate_cache clears it."""

@@ -1,0 +1,137 @@
+"""
+downloader/scan_reporter.py
+Scan Report Generator for Profile Media Archive in Channel Harvest.
+
+Generates a clear, informative, UTF-8 scan_report.txt summarizing:
+- Platform, Profile URL, Profile Display Name.
+- Scan start/end timestamps and duration.
+- Scan completeness status (COMPLETE, PARTIAL, INTERRUPTED, FAILED) and limitations.
+- Discovered counts (Posts, Media Items, Photos/Images, Videos, Unsupported).
+- Deduplication accounting.
+- Downloaded, failed, and skipped statistics.
+- Authentication method used (strictly redacting any secrets, cookies, or tokens).
+- Download engines utilized (gallery-dl, yt-dlp).
+- Sanitized diagnostic and error summaries.
+"""
+
+from typing import Dict, Any, Optional
+from datetime import datetime, timezone
+from pathlib import Path
+
+from core.diagnostics import PrivacySanitizer
+from core.inventory import ProfileMediaInventory, ScanCompleteness
+
+
+class ScanReporter:
+    """
+    Produces formatted UTF-8 scan reports for profile archiving sessions.
+    """
+
+    @classmethod
+    def generate_report_text(
+        cls,
+        platform: str,
+        profile_url: str,
+        scan_id: str,
+        start_time: str,
+        end_time: str,
+        scan_status: str,
+        completeness_info: str,
+        posts_count: int,
+        media_count: int,
+        image_count: int,
+        video_count: int,
+        unsupported_count: int = 0,
+        duplicates_removed: int = 0,
+        downloaded_count: int = 0,
+        failed_count: int = 0,
+        skipped_count: int = 0,
+        auth_method: str = "none",
+        engines_used: Optional[list] = None,
+        errors: Optional[list] = None,
+        profile_name: Optional[str] = None,
+    ) -> str:
+        """Constructs human-readable scan report document."""
+        lines = []
+
+        lines.append("=" * 72)
+        lines.append(f"CHANNEL HARVEST — PROFILE MEDIA ARCHIVE REPORT")
+        lines.append("=" * 72)
+        lines.append("")
+
+        # 1. PROFILE & SCAN SESSION
+        lines.append("--- [1. ARCHIVE SESSION] ---")
+        lines.append(f"Platform               : {platform.capitalize()}")
+        lines.append(f"Profile Name / Creator : {profile_name or 'N/A'}")
+        lines.append(f"Profile URL            : {PrivacySanitizer.sanitize(profile_url)}")
+        lines.append(f"Scan ID                : {scan_id}")
+        lines.append(f"Scan Start Time        : {start_time}")
+        lines.append(f"Scan End Time          : {end_time}")
+        lines.append(f"Scan Status            : {scan_status}")
+        lines.append(f"Scan Completeness      : {completeness_info}")
+        lines.append("")
+
+        # 2. DISCOVERY METRICS
+        lines.append("--- [2. DISCOVERY METRICS] ---")
+        lines.append(f"Discovered Posts       : {posts_count}")
+        lines.append(f"Discovered Media Items : {media_count}")
+        lines.append(f"  - Images / Photos    : {image_count}")
+        lines.append(f"  - Videos / Reels     : {video_count}")
+        lines.append(f"  - Unsupported Items  : {unsupported_count}")
+        lines.append(f"Duplicates Excluded    : {duplicates_removed}")
+        lines.append("")
+
+        # 3. DOWNLOAD EXECUTION SUMMARY
+        lines.append("--- [3. DOWNLOAD EXECUTION SUMMARY] ---")
+        lines.append(f"Total Downloaded       : {downloaded_count}")
+        lines.append(f"Total Failed           : {failed_count}")
+        lines.append(f"Total Skipped          : {skipped_count}")
+        lines.append("")
+
+        # 4. ENGINES & AUTHENTICATION
+        lines.append("--- [4. ENGINES & AUTHENTICATION] ---")
+        clean_engines = engines_used if engines_used else ["gallery-dl", "yt-dlp"]
+        lines.append(f"Engines Utilized       : {', '.join(clean_engines)}")
+        lines.append(f"Authentication Method  : {PrivacySanitizer.sanitize(auth_method)}")
+        lines.append(f"Credential Protection  : Active (zero cookies or session tokens logged)")
+        lines.append("")
+
+        # 5. DIAGNOSTICS & KNOWN LIMITATIONS
+        lines.append("--- [5. DIAGNOSTICS & NOTICES] ---")
+        if scan_status == ScanCompleteness.PARTIAL:
+            lines.append("Notice: This scan is a Partial Archive. Some historical media or pagination")
+            lines.append("endpoints may be constrained by platform limits or rate controls.")
+        elif scan_status == ScanCompleteness.INTERRUPTED:
+            lines.append("Notice: The archive scan was interrupted before full completion.")
+            lines.append("Already discovered items remain preserved and available for download.")
+
+        if errors:
+            lines.append("Sanitized Diagnostic Messages:")
+            for err in errors:
+                sanitized_err = PrivacySanitizer.sanitize(str(err))
+                lines.append(f"  * {sanitized_err}")
+        else:
+            lines.append("No critical extractor exceptions encountered.")
+
+        lines.append("")
+        lines.append("=" * 72)
+        lines.append("Generated by Channel Harvest Profile Media Archive")
+        lines.append("=" * 72)
+        lines.append("")
+
+        return "\n".join(lines)
+
+    @classmethod
+    def write_report_file(
+        cls,
+        target_dir: Path,
+        report_text: str,
+        filename: str = "scan_report.txt",
+    ) -> Path:
+        """Writes report text to UTF-8 file in target directory."""
+        target_dir = Path(target_dir).resolve()
+        target_dir.mkdir(parents=True, exist_ok=True)
+        report_path = target_dir / filename
+        with open(report_path, "w", encoding="utf-8") as f:
+            f.write(report_text)
+        return report_path
