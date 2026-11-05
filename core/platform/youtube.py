@@ -200,4 +200,18 @@ class YouTubeAdapter(PlatformAdapter):
                 )
             return PlatformAuthConfig.none()
 
+        # Check fallback to 'all' if YouTube has no authentication configured
+        from core.platform.auth import resolve_effective_cookie_file
+        eff_method, eff_file, desc_suffix = resolve_effective_cookie_file(
+            'youtube', 'none', '', settings=settings
+        )
+        if eff_method == 'custom_file' and eff_file:
+            cp = Path(eff_file)
+            if cp.is_file():
+                return PlatformAuthConfig(
+                    auth_method='custom_file',
+                    cookie_file=str(cp.resolve()),
+                    description=f'Custom Cookie File{desc_suffix}',
+                )
+
         return PlatformAuthConfig.none()

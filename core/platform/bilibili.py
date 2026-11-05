@@ -531,6 +531,20 @@ class BilibiliAdapter(PlatformAdapter):
                 description="Custom Cookie File",
             )
 
+        # Fallback to 'all' if Bilibili has no authentication configured
+        from core.platform.auth import resolve_effective_cookie_file
+        eff_method, eff_file, desc_suffix = resolve_effective_cookie_file(
+            "bilibili", auth_method, custom_cookie_file, settings=settings
+        )
+        if eff_method == "custom_file" and eff_file:
+            cpath = Path(eff_file)
+            if cpath.is_file():
+                return PlatformAuthConfig(
+                    auth_method="custom_file",
+                    cookie_file=str(cpath.resolve()),
+                    description=f"Custom Cookie File{desc_suffix}",
+                )
+
         return PlatformAuthConfig.none()
 
     def extract_entries(

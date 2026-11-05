@@ -258,5 +258,65 @@ class TestSettingsAuthUI(unittest.TestCase):
         self.assertIn("For authenticated downloads", self.dialog.cookie_file_hint_lbl.text())
 
 
+    def test_auth_platform_combo_contains_all_and_tiktok(self):
+        """Verify auth platform dropdown contains 'all' and 'tiktok', and both are selectable."""
+        combo = self.dialog.auth_platform_combo
+        model = combo.model()
+        all_idx = combo.findData("all")
+        tt_idx = combo.findData("tiktok")
+
+        self.assertEqual(all_idx, 0)
+        self.assertGreaterEqual(tt_idx, 0)
+
+        all_item = model.item(all_idx)
+        self.assertTrue(all_item.isEnabled())
+        self.assertTrue(all_item.isSelectable())
+
+        tt_item = model.item(tt_idx)
+        self.assertTrue(tt_item.isEnabled())
+        self.assertTrue(tt_item.isSelectable())
+
+    def test_tiktok_auth_ui_selection_and_persistence(self):
+        """Verify selecting TikTok in combo switches to tiktok_ settings and saves correctly."""
+        combo = self.dialog.auth_platform_combo
+        tt_idx = combo.findData("tiktok")
+        self.assertGreaterEqual(tt_idx, 0)
+
+        combo.setCurrentIndex(tt_idx)
+        self.dialog._on_auth_platform_changed(tt_idx)
+        self.assertEqual(self.dialog._current_auth_platform, "tiktok")
+        self.assertEqual(self.dialog._get_auth_prefix(), "tiktok_")
+
+        # Set custom cookie file for tiktok
+        dummy_cookie = Path(self.tmp_dir.name) / "tiktok_cookies.txt"
+        dummy_cookie.write_text("# Netscape HTTP Cookie File\n.tiktok.com\tTRUE\t/\tTRUE\t0\tsessionid\tabc\n", encoding="utf-8")
+        self.dialog.auth_file_rb.click()
+        self.dialog.cookie_file_edit.setText(str(dummy_cookie.resolve()))
+
+        # Check settings manager
+        self.assertEqual(self.settings_manager.get("tiktok_auth_method"), "custom_file")
+        self.assertEqual(self.settings_manager.get("tiktok_custom_cookie_file"), str(dummy_cookie.resolve()))
+
+    def test_all_auth_ui_selection_and_persistence(self):
+        """Verify selecting All in combo switches to all_ settings and saves correctly."""
+        combo = self.dialog.auth_platform_combo
+        all_idx = combo.findData("all")
+        self.assertEqual(all_idx, 0)
+
+        combo.setCurrentIndex(all_idx)
+        self.dialog._on_auth_platform_changed(all_idx)
+        self.assertEqual(self.dialog._current_auth_platform, "all")
+        self.assertEqual(self.dialog._get_auth_prefix(), "all_")
+
+        # Set universal custom cookie file
+        dummy_cookie = Path(self.tmp_dir.name) / "universal_cookies.txt"
+        dummy_cookie.write_text("# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tx\n", encoding="utf-8")
+        self.dialog.auth_file_rb.click()
+        self.dialog.cookie_file_edit.setText(str(dummy_cookie.resolve()))
+
+        # Check settings manager
+        self.assertEqual(self.settings_manager.get("all_auth_method"), "custom_file")
+        self.assertEqual(self.settings_manager.get("all_custom_cookie_file"), str(dummy_cookie.resolve()))
+
 if __name__ == "__main__":
     unittest.main()

@@ -62,6 +62,9 @@ class AuthStatusCode:
     NO_INSTAGRAM_COOKIES = "NO_INSTAGRAM_COOKIES"
     X_SESSION_AUTHENTICATED = "X_SESSION_AUTHENTICATED"
     NO_X_COOKIES = "NO_X_COOKIES"
+    TIKTOK_SESSION_AUTHENTICATED = "TIKTOK_SESSION_AUTHENTICATED"
+    NO_TIKTOK_COOKIES = "NO_TIKTOK_COOKIES"
+    ALL_SESSION_AUTHENTICATED = "ALL_SESSION_AUTHENTICATED"
     AUTHENTICATION_TEST_FAILED = "AUTHENTICATION_TEST_FAILED"
     UNKNOWN_AUTHENTICATION_ERROR = "UNKNOWN_AUTHENTICATION_ERROR"
     INTERNAL_ERROR = "INTERNAL_ERROR"
@@ -630,7 +633,16 @@ class AuthChecker:
         """
         target = (browser_or_file or "").strip()
         if target.lower() in ("none", ""):
-            plat_name = "X (Twitter)" if platform in ("x", "twitter") else ("Instagram" if platform == "instagram" else ("Facebook" if platform == "facebook" else ("Bilibili" if platform == "bilibili" else ("Douyin" if platform == "douyin" else "YouTube"))))
+            plat_name = (
+                "All Platforms" if platform == "all"
+                else "TikTok" if platform == "tiktok"
+                else "X (Twitter)" if platform in ("x", "twitter")
+                else "Instagram" if platform == "instagram"
+                else "Facebook" if platform == "facebook"
+                else "Bilibili" if platform == "bilibili"
+                else "Douyin" if platform == "douyin"
+                else "YouTube"
+            )
             return AuthTestResult(
                 success=True,
                 stage=AuthStage.COMPLETE,
@@ -1152,6 +1164,95 @@ class AuthChecker:
                 suggested_action=action_msg,
                 technical_error="",
                 platform="x",
+            )
+
+        elif platform == "tiktok":
+            tt_cookies = [c for c in jar if "tiktok.com" in getattr(c, "domain", "").lower()]
+            has_session = any(getattr(c, "name", "").lower() in ("sessionid", "sessionid_ss", "sid_tt", "sid_guard", "ttwid") for c in tt_cookies)
+            if not tt_cookies:
+                return AuthTestResult(
+                    success=False,
+                    stage="TikTok Cookie Verification",
+                    status_code=AuthStatusCode.NO_TIKTOK_COOKIES,
+                    browser_name=disp_name,
+                    profile_name="N/A",
+                    cookie_count=total_cookies,
+                    youtube_cookie_count=0,
+                    has_session=False,
+                    reason="The cookie file was parsed, but contains no TikTok (tiktok.com) cookies.",
+                    suggested_action="Make sure you were logged in to tiktok.com when exporting cookies.",
+                    technical_error=f"Parsed {total_cookies} total cookies, 0 for tiktok.com",
+                    platform="tiktok",
+                )
+            status = AuthStatusCode.TIKTOK_SESSION_AUTHENTICATED if has_session else AuthStatusCode.COOKIE_FILE_VALID
+            reason_msg = f"Cookie file successfully loaded. {len(tt_cookies)} TikTok cookies found."
+            if not has_session:
+                reason_msg += " (Notice: Active login session cookie 'sessionid' not detected; login-required videos may not be accessible)."
+            action_msg = "TikTok cookie file is active. Channel Harvest will use this cookie file for TikTok downloads."
+            return AuthTestResult(
+                success=True,
+                stage=AuthStage.COMPLETE,
+                status_code=status,
+                browser_name=disp_name,
+                profile_name="N/A",
+                cookie_count=total_cookies,
+                youtube_cookie_count=len(tt_cookies),
+                has_session=has_session,
+                reason=reason_msg,
+                suggested_action=action_msg,
+                technical_error="",
+                platform="tiktok",
+            )
+
+        elif platform == "all":
+            if total_cookies == 0:
+                return AuthTestResult(
+                    success=False,
+                    stage="All Platforms Cookie Verification",
+                    status_code=AuthStatusCode.COOKIE_FILE_INVALID,
+                    browser_name=disp_name,
+                    profile_name="N/A",
+                    cookie_count=0,
+                    youtube_cookie_count=0,
+                    has_session=False,
+                    reason="The cookie file was parsed, but contains no cookies.",
+                    suggested_action="Export your cookies from your browser in standard Netscape format.",
+                    technical_error="Parsed 0 cookies",
+                    platform="all",
+                )
+            detected_platforms = []
+            domains = [getattr(c, "domain", "").lower() for c in jar]
+            if any("youtube.com" in d or "google.com" in d for d in domains):
+                detected_platforms.append("YouTube")
+            if any("tiktok.com" in d for d in domains):
+                detected_platforms.append("TikTok")
+            if any("facebook.com" in d for d in domains):
+                detected_platforms.append("Facebook")
+            if any("instagram.com" in d for d in domains):
+                detected_platforms.append("Instagram")
+            if any("x.com" in d or "twitter.com" in d for d in domains):
+                detected_platforms.append("X (Twitter)")
+            if any("bilibili.com" in d for d in domains):
+                detected_platforms.append("Bilibili")
+            if any("douyin.com" in d for d in domains):
+                detected_platforms.append("Douyin")
+
+            plat_summary = ", ".join(detected_platforms) if detected_platforms else "General"
+            reason_msg = f"Universal cookie file successfully loaded. Found {total_cookies} cookies (detected for: {plat_summary})."
+            action_msg = "All-in-One cookie file is active. Channel Harvest will use this cookie file across all supported platforms."
+            return AuthTestResult(
+                success=True,
+                stage=AuthStage.COMPLETE,
+                status_code=AuthStatusCode.ALL_SESSION_AUTHENTICATED,
+                browser_name=disp_name,
+                profile_name="N/A",
+                cookie_count=total_cookies,
+                youtube_cookie_count=total_cookies,
+                has_session=True,
+                reason=reason_msg,
+                suggested_action=action_msg,
+                technical_error="",
+                platform="all",
             )
 
         yt_cookies, has_session = cls._inspect_youtube_cookies(jar)

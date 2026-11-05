@@ -11,7 +11,11 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.4.0-6C63FF?style=flat-square"/>
+  <strong>English</strong> | <a href="README_CN.md">简体中文</a>
+</p>
+
+<p align="center">
+  <img alt="Version" src="https://img.shields.io/badge/version-1.4.1-6C63FF?style=flat-square"/>
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-blue?style=flat-square"/>
   <img alt="License" src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square"/>
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-F59E0B?style=flat-square"/>
@@ -32,13 +36,14 @@ Easily switch between platforms directly from the top navigation bar with adapti
   * Automatically defaults to **Audio Only** mode for albums, singles, and playlists.
   * **1:1 Square Album Cover Art**: Extracts Google CDN original uncompressed master artwork, automatically names files by album, deduplicates across tracks, and embeds directly into audio tags.
   * **LRC Synchronized Lyrics**: Intelligent discovery and downloading of synchronized `.lrc` lyrics with seamless audio tag embedding (MP3, M4A, FLAC, Opus).
-* **Facebook Video, Watch, Reels & Profile Media Archive**:
+* **Facebook Video, Watch, Reels & Deep Profile Media Archival**:
   * Full support for Facebook Watch (`/watch/?v=...`), page/creator videos (`/{user}/videos/...`), and Facebook Reels (`/reel/`, `fb.watch`).
-  * **Dual-Engine Profile Archival**: High-performance dual-engine architecture combining `gallery-dl` for photos and image sets with `yt-dlp` for video content and Reels.
-  * **Automated Image Detection**: Intelligently auto-switches to `Image Only` mode when a scan discovers photos exclusively, preventing unsupported video extraction attempts.
-* **Instagram Reels, Video Posts, Carousels & Profile Archival**:
+  * **Comet GraphQL Deep Profile Enumeration**: Built-in Facebook Comet GraphQL engine supporting both public unauthenticated mode and cookie login, seamlessly enumerating complete photo galleries (Photos tab) and comprehensive video/Reel archives (Videos & Reels tabs) up to thousands of items without Meta Graph API keys.
+  * **Native Caption Optimization**: Automatically extracts authentic post captions, strips hashtag `#` symbols to prevent filename clutter, and applies intelligent length truncation (50 Chinese chars / 30 English words) with graceful fallback.
+* **Instagram Reels, Video Posts, Carousels & Deep Profile Archival**:
   * Full support for single Reels (`/reel/`, `/reels/`), standard video posts (`/p/`), IGTV (`/tv/`), and creator profiles (`/<username>/`).
-  * Seamless mixed-media profile scanning capturing both high-resolution photos and video reels.
+  * **Logged-Out GraphQL Cursor Pagination**: Dedicated `PolarisOwnerToTimelineMediaLoggedOutQuery_connection` engine bypassing rate-limit walls and extracting entire creator feeds (photos, multi-image carousels, and 880+ Reels) in seconds.
+  * **Intelligent Title Cleaning**: Extracts real post captions, removes `#` tags, and bounds length gracefully.
 * **X (Twitter) Video Post & Multi-Media Archival**:
   * Direct support for single video and GIF posts (`x.com/<user>/status/<id>`, `twitter.com/<user>/status/<id>`, `mobile.twitter.com`, `x.com/i/status/<id>`).
   * Intelligent multi-video tweet extraction: unpacks and enumerates individual video streams (`/video/1`, `/video/2`) with parent post caption and metadata preservation.
@@ -65,9 +70,11 @@ Easily switch between platforms directly from the top navigation bar with adapti
 * **Create Channel Subfolder**: Groups downloads neatly under the channel or creator's name.
 * **Create Custom Folder Name**: Download directly into a custom user-defined folder name, automatically disabling channel subfolders.
 
-### 🔒 Platform-Scoped Authentication
-* **Isolated Credentials**: Dedicated Netscape `cookies.txt` support per platform, ensuring zero cross-platform credential leakage.
-* **Session Verification**: Built-in validation for YouTube, Instagram (`sessionid`), Bilibili (`SESSDATA`), and Facebook cookies to access private, members-only, or login-required content safely.
+### 🔒 Platform-Scoped & Universal Authentication
+* **Universal 'All' Cookie Mode**: Configure a single Netscape `cookies.txt` under the **All (全部平台)** platform option to connect all supported platforms at once without importing individual files.
+* **TikTok Custom Cookie Support**: Dedicated TikTok platform authentication in Settings with Netscape `cookies.txt` validation for age-restricted, login-required, and private creator content.
+* **Isolated Credentials**: Granular platform selection (YouTube, YouTube Music, TikTok, Facebook, Instagram, X, Bilibili, Douyin) preventing cross-platform leakage.
+* **Session Verification**: Built-in session health checks for YouTube, TikTok, Instagram (`sessionid`), Bilibili (`SESSDATA`), and Facebook.
 
 ### 🖥️ Modern Desktop Experience & Diagnostics
 * **Auto-Scan on Paste**: Toggleable in Settings -> General. Seamlessly triggers link inspection and scanning when a valid URL is pasted into the input field.
@@ -86,8 +93,8 @@ Visit the [GitHub Releases](https://github.com/jjsiew2014-art/ChannelHarvest/rel
 
 | Package | File | Description |
 | :--- | :--- | :--- |
-| **Windows Installer** (Recommended) | `ChannelHarvest-Setup-v1.4.0.exe` | Standard setup wizard (Inno Setup) with desktop shortcuts and uninstaller |
-| **Standalone Portable ZIP** | `ChannelHarvest-Portable-v1.4.0.zip` | Zero installation — extract anywhere and run `ChannelHarvest.exe` |
+| **Windows Installer** (Recommended) | `ChannelHarvest-Setup-v1.4.1.exe` | Standard setup wizard (Inno Setup) with desktop shortcuts and uninstaller |
+| **Standalone Portable ZIP** | `ChannelHarvest-Portable-v1.4.1.zip` | Zero installation — extract anywhere and run `ChannelHarvest.exe` |
 
 Both packages are fully self-contained with bundled `runtime/` binaries (`ffmpeg.exe`, `ffprobe.exe`, `deno.exe`, `yt-dlp.exe`).
 
@@ -104,8 +111,8 @@ Because Channel Harvest is an open-source tool and not signed with an expensive 
 You can verify the SHA-256 integrity hash of your downloaded file against `SHA256SUMS.txt` published on the GitHub Releases page:
 
 ```powershell
-Get-FileHash ChannelHarvest-Setup-v1.4.0.exe -Algorithm SHA256
-Get-FileHash ChannelHarvest-Portable-v1.4.0.zip -Algorithm SHA256
+Get-FileHash ChannelHarvest-Setup-v1.4.1.exe -Algorithm SHA256
+Get-FileHash ChannelHarvest-Portable-v1.4.1.zip -Algorithm SHA256
 ```
 
 ---
@@ -243,8 +250,8 @@ The script will automatically:
 2. Generate multi-resolution icons and PE metadata.
 3. Clean and freeze the application using PyInstaller.
 4. Deploy the `runtime/` folder into `dist/ChannelHarvest/`.
-5. Package `release/ChannelHarvest-Portable-v1.4.0.zip`.
-6. Compile `release/ChannelHarvest-Setup-v1.4.0.exe` using Inno Setup.
+5. Package `release/ChannelHarvest-Portable-v1.4.1.zip`.
+6. Compile `release/ChannelHarvest-Setup-v1.4.1.exe` using Inno Setup.
 7. Generate cryptographic SHA-256 hashes in `release/SHA256SUMS.txt`.
 
 ---

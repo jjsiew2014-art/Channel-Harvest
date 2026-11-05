@@ -1485,9 +1485,10 @@ class YtDlpEngine:
 
         # 2. Mode: Video Only (complete video with audio merged)
         num_prefix = getattr(settings, "number_prefix", "")
+        fb_custom_title = video.title if (platform_prefix == "facebook" and getattr(video, "title", None)) else None
         if mode == DownloadMode.VIDEO_ONLY:
             format_spec, merge_ext = FormatSelector.build_video_format_spec(settings)
-            outtmpl_pattern = resolve_video_outtmpl(target_dir, include_video_id=settings.include_video_id_in_filename, number_prefix=num_prefix)
+            outtmpl_pattern = resolve_video_outtmpl(target_dir, include_video_id=settings.include_video_id_in_filename, number_prefix=num_prefix, custom_title=fb_custom_title)
             hook = self._create_progress_hook(
                 progress_callback=progress_callback,
                 cancel_check=cancel_check,
@@ -1684,7 +1685,7 @@ class YtDlpEngine:
         # 3. Mode: Audio Only (standalone audio track)
         elif mode == DownloadMode.AUDIO_ONLY:
             format_spec, audio_ext, postprocessors = FormatSelector.build_audio_format_spec(settings)
-            outtmpl_pattern = resolve_video_outtmpl(target_dir, include_video_id=settings.include_video_id_in_filename, number_prefix=num_prefix)
+            outtmpl_pattern = resolve_video_outtmpl(target_dir, include_video_id=settings.include_video_id_in_filename, number_prefix=num_prefix, custom_title=fb_custom_title)
             hook = self._create_progress_hook(
                 progress_callback=progress_callback,
                 cancel_check=cancel_check,
@@ -1885,13 +1886,13 @@ class YtDlpEngine:
             if merge_ext.lower() == audio_ext.lower():
                 v_suffix = "_video"
                 a_suffix = "_audio"
-                v_outtmpl = resolve_video_outtmpl(target_dir, include_video_id=settings.include_video_id_in_filename, suffix=v_suffix, number_prefix=num_prefix)
-                a_outtmpl = resolve_video_outtmpl(target_dir, include_video_id=settings.include_video_id_in_filename, suffix=a_suffix, number_prefix=num_prefix)
+                v_outtmpl = resolve_video_outtmpl(target_dir, include_video_id=settings.include_video_id_in_filename, suffix=v_suffix, number_prefix=num_prefix, custom_title=fb_custom_title)
+                a_outtmpl = resolve_video_outtmpl(target_dir, include_video_id=settings.include_video_id_in_filename, suffix=a_suffix, number_prefix=num_prefix, custom_title=fb_custom_title)
             else:
                 v_suffix = ""
                 a_suffix = ""
-                v_outtmpl = resolve_video_outtmpl(target_dir, include_video_id=settings.include_video_id_in_filename, number_prefix=num_prefix)
-                a_outtmpl = resolve_video_outtmpl(target_dir, include_video_id=settings.include_video_id_in_filename, number_prefix=num_prefix)
+                v_outtmpl = resolve_video_outtmpl(target_dir, include_video_id=settings.include_video_id_in_filename, number_prefix=num_prefix, custom_title=fb_custom_title)
+                a_outtmpl = resolve_video_outtmpl(target_dir, include_video_id=settings.include_video_id_in_filename, number_prefix=num_prefix, custom_title=fb_custom_title)
 
             # Step 1: Video download
             v_hook = self._create_progress_hook(
@@ -2340,10 +2341,8 @@ class ChannelScanWorker(QThread):
                         if m_prof and m_prof.search(self.url):
                             is_archive_url = True
                     elif adapter.platform_id == "facebook":
-                        low_url = self.url.lower()
-                        if "photo" in low_url or "set=a." in low_url or "/photos" in low_url or "/media/set" in low_url:
-                            is_archive_url = True
-                        elif not any(k in low_url for k in ("/watch", "/reel", "/videos/", "video.php", "fb.watch", "/share/v", "/share/r")):
+                        from core.platform.facebook import FacebookAdapter
+                        if FacebookAdapter.is_profile_url(self.url):
                             is_archive_url = True
 
                     if is_archive_url and GalleryDlEngine.is_available():

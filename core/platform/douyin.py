@@ -299,6 +299,7 @@ class DouyinAdapter(PlatformAdapter):
         Supports Browser Cookies and Custom Cookie File independently of YouTube.
         Zero credentials, tokens, or cookie settings are inherited from YouTube.
         """
+        from pathlib import Path
         from core.settings import SettingsManager
 
         auth_method = "none"
@@ -382,6 +383,20 @@ class DouyinAdapter(PlatformAdapter):
                     description=f"Browser Cookies ({b_name.capitalize()})",
                 )
             return PlatformAuthConfig.none()
+
+        # Fallback to 'all' if Douyin has no authentication configured
+        from core.platform.auth import resolve_effective_cookie_file
+        eff_method, eff_file, desc_suffix = resolve_effective_cookie_file(
+            "douyin", auth_method, custom_cookie_file, settings=settings
+        )
+        if eff_method == "custom_file" and eff_file:
+            cp = Path(eff_file)
+            if cp.is_file():
+                return PlatformAuthConfig(
+                    auth_method="custom_file",
+                    cookie_file=str(cp.resolve()),
+                    description=f"Custom Cookie File{desc_suffix}",
+                )
 
         return PlatformAuthConfig.none()
 

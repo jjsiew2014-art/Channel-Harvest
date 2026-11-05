@@ -120,6 +120,11 @@ class I18nManager:
             "zh_CN": "平台",
             "zh_TW": "平台",
         },
+        "platform_all": {
+            "en": "All",
+            "zh_CN": "全部 (All)",
+            "zh_TW": "全部 (All)",
+        },
         "platform_youtube": {
             "en": "YouTube",
             "zh_CN": "YouTube",
@@ -2565,6 +2570,92 @@ class I18nManager:
             "en": "X (Twitter) Session Detected",
             "zh_CN": "已检测到 X (Twitter) 登录会话",
             "zh_TW": "已偵測到 X (Twitter) 登入工作階段",
+        },
+        # ---------------------------------------------------------------------
+        # TikTok Authentication Strings
+        # ---------------------------------------------------------------------
+        "settings_auth_tiktok": {
+            "en": "AUTHENTICATION",
+            "zh_CN": "身份验证",
+            "zh_TW": "身分驗證",
+        },
+        "auth_tiktok_hint": {
+            "en": "Export cookies from your web browser using a Netscape cookies.txt extension while logged in to TikTok, then select the file above.",
+            "zh_CN": "在已登录 TikTok 的浏览器中使用 Netscape cookies.txt 扩展导出 Cookie，并在上方选择该文件。",
+            "zh_TW": "在已登入 TikTok 的瀏覽器中使用 Netscape cookies.txt 擴充功能匯出 Cookie，並於上方選取該檔案。",
+        },
+        "auth_tiktok_none_hint": {
+            "en": "No authentication is configured for TikTok. Public videos and accessible creator profiles will download without cookies.",
+            "zh_CN": "未配置 TikTok 身份认证。公开视频和可访问的创作者主页将在无需 Cookie 的状态下直接下载。",
+            "zh_TW": "未設定 TikTok 身分驗證。公開影片與可存取的創作者首頁將在無需 Cookie 的狀態下直接下載。",
+        },
+        "auth_test_tiktok_tooltip": {
+            "en": "Verify the configured TikTok cookie file without downloading videos",
+            "zh_CN": "验证配置的 TikTok Cookie 文件 (不下载视频)",
+            "zh_TW": "驗證已設定的 TikTok Cookie 檔案 (不下載影片)",
+        },
+        "status_tiktok_session_detected": {
+            "en": "TikTok Session Detected",
+            "zh_CN": "已检测到 TikTok 登录会话",
+            "zh_TW": "已偵測到 TikTok 登入工作階段",
+        },
+        "auth_tiktok_privacy_notice": {
+            "en": "Privacy Guaranteed: Cookie contents, passwords, and tokens are never logged or exported.",
+            "zh_CN": "隐私安全保证：Cookie 内容、密码与会话令牌绝不会被记录或导出。",
+            "zh_TW": "隱私安全保證：Cookie 內容、密碼與工作階段權杖絕不會被記錄或匯出。",
+        },
+        "auth_click_test_tiktok_hint": {
+            "en": "Click 'Test' to verify your TikTok cookie file.",
+            "zh_CN": "点击“测试”以验证您的 TikTok Cookie 文件。",
+            "zh_TW": "按一下「測試」以驗證您的 TikTok Cookie 檔案。",
+        },
+        "auth_dialog_tiktok_title": {
+            "en": "TikTok Authentication Verification",
+            "zh_CN": "TikTok 身份认证诊断",
+            "zh_TW": "TikTok 身分驗證診斷",
+        },
+        # ---------------------------------------------------------------------
+        # All Platforms Authentication Strings
+        # ---------------------------------------------------------------------
+        "settings_auth_all": {
+            "en": "AUTHENTICATION",
+            "zh_CN": "身份验证",
+            "zh_TW": "身分驗證",
+        },
+        "auth_all_hint": {
+            "en": "Select an exported Netscape cookies.txt file containing cookies for your platforms. Channel Harvest will automatically use this cookie file across all supported platforms.",
+            "zh_CN": "选择包含多个平台 Cookie 的 Netscape cookies.txt 文件。Channel Harvest 将自动在所有支持的平台上统一使用该文件进行连接。",
+            "zh_TW": "選取包含多個平台 Cookie 的 Netscape cookies.txt 檔案。Channel Harvest 將自動在所有支援的平台上統一使用該檔案進行連線。",
+        },
+        "auth_all_none_hint": {
+            "en": "No universal authentication is configured. Downloads will use individual platform settings or proceed publicly without cookies.",
+            "zh_CN": "未配置全局统一身份认证。下载将遵循各平台的独立设置，或在无需 Cookie 的状态下直接下载公开内容。",
+            "zh_TW": "未設定全域統一身分驗證。下載將遵循各平台的獨立設定，或在無需 Cookie 的狀態下直接下載公開內容。",
+        },
+        "auth_test_all_tooltip": {
+            "en": "Verify the universal cookie file for all platforms without downloading media",
+            "zh_CN": "验证配置的全局通用 Cookie 文件 (不下载媒体)",
+            "zh_TW": "驗證已設定的全域通用 Cookie 檔案 (不下載媒體)",
+        },
+        "status_all_session_detected": {
+            "en": "Universal Session Detected (All Platforms)",
+            "zh_CN": "已检测到通用登录会话 (所有平台)",
+            "zh_TW": "已偵測到通用登入工作階段 (所有平台)",
+        },
+        "auth_all_privacy_notice": {
+            "en": "Privacy Guaranteed: Cookie contents, passwords, and tokens are never logged or exported.",
+            "zh_CN": "隐私安全保证：Cookie 内容、密码与会话令牌绝不会被记录或导出。",
+            "zh_TW": "隱私安全保證：Cookie 內容、密碼與工作階段權杖絕不會被記錄或匯出。",
+        },
+        "auth_click_test_all_hint": {
+            "en": "Click 'Test' to verify your universal cookie file across platforms.",
+            "zh_CN": "点击“测试”以验证您的全局通用 Cookie 文件跨平台有效性。",
+            "zh_TW": "按一下「測試」以驗證您的全域通用 Cookie 檔案跨平台有效性。",
+        },
+        "auth_dialog_all_title": {
+            "en": "All Platforms Authentication Verification",
+            "zh_CN": "全平台统一身份认证诊断",
+            "zh_TW": "全平台統一身分驗證診斷",
         },
         "tooltip_x_no_chapters": {
             "en": "Chapters are not supported for X (Twitter) media",

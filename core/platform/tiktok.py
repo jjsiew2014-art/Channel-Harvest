@@ -50,7 +50,7 @@ class TikTokAdapter(PlatformAdapter):
             supports_playlists=True,   # User feeds / collections supported
             supports_channel_scan=True,# Creator scanning supported
             supports_browser_cookies=False,
-            supports_cookie_file=False,
+            supports_cookie_file=True,
             archive_prefix="tiktok",
         )
 
@@ -115,10 +115,47 @@ class TikTokAdapter(PlatformAdapter):
 
     def get_auth_config(self, settings: Optional[Any] = None) -> "PlatformAuthConfig":
         """
-        TikTok does not currently implement platform authentication.
-        Always returns None to ensure YouTube credentials are never leaked or applied.
+        Resolves TikTok-specific authentication configuration.
+        Supports Custom Cookie File (cookies.txt).
+        Falls back to global 'all' custom cookie file if TikTok auth is 'none'.
         """
-        from core.platform.auth import PlatformAuthConfig
+        from pathlib import Path
+        from core.platform.auth import PlatformAuthConfig, resolve_effective_cookie_file
+
+        auth_method = "none"
+        custom_cookie_file = ""
+
+        if settings is not None:
+            if hasattr(settings, "get") and callable(settings.get):
+                auth_method = settings.get("tiktok_auth_method", "none") or "none"
+                custom_cookie_file = settings.get("tiktok_custom_cookie_file", "") or ""
+            elif hasattr(settings, "tiktok_auth_method"):
+                auth_method = getattr(settings, "tiktok_auth_method", "none") or "none"
+                custom_cookie_file = getattr(settings, "tiktok_custom_cookie_file", "") or ""
+            elif isinstance(settings, dict):
+                auth_method = settings.get("tiktok_auth_method", "none") or "none"
+                custom_cookie_file = settings.get("tiktok_custom_cookie_file", "") or ""
+        else:
+            try:
+                from core.settings import SettingsManager
+                sm = SettingsManager()
+                auth_method = sm.get("tiktok_auth_method", "none") or "none"
+                custom_cookie_file = sm.get("tiktok_custom_cookie_file", "") or ""
+            except Exception:
+                pass
+
+        eff_method, eff_file, desc_suffix = resolve_effective_cookie_file(
+            "tiktok", auth_method, custom_cookie_file, settings=settings
+        )
+
+        if eff_method == "custom_file" and eff_file:
+            cookie_path = Path(eff_file)
+            if cookie_path.is_file():
+                return PlatformAuthConfig(
+                    auth_method="custom_file",
+                    cookie_file=str(cookie_path.resolve()),
+                    description=f"Custom Cookie File ({cookie_path.name}){desc_suffix}",
+                )
         return PlatformAuthConfig.none()
 
     def extract_entries(

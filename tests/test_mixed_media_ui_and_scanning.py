@@ -354,7 +354,8 @@ class TestMixedMediaUIAndScanning(unittest.TestCase):
             source_title="Test Facebook Page",
         )
 
-        with patch("core.platform.PlatformRegistry.get_adapter", return_value=mock_adapter):
+        with patch("core.platform.PlatformRegistry.get_adapter", return_value=mock_adapter), \
+             patch("core.platform.facebook_comet.FacebookCometClient.extract_page_tokens", return_value={}):
             result = scanner.scan_profile(
                 url="https://www.facebook.com/TestPage",
                 platform="facebook",

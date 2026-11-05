@@ -3,7 +3,7 @@ version.py
 Single source of truth for Channel Harvest application version and metadata.
 """
 
-__version__ = "1.4.0"
+__version__ = "1.4.1"
 __app_name__ = "Channel Harvest"
 
 

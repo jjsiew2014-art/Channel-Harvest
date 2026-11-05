@@ -318,5 +318,58 @@ class TestAuthChecker(unittest.TestCase):
             self.assertIn("cookies.txt", combined_text)
 
 
+    def test_tiktok_cookie_file_verification_success(self):
+        """Verify TikTok cookie file containing sessionid is authenticated."""
+        content = (
+            "# Netscape HTTP Cookie File\n"
+            ".tiktok.com\tTRUE\t/\tTRUE\t2147483647\tsessionid\tsecret_tt_session_value\n"
+            ".tiktok.com\tTRUE\t/\tTRUE\t2147483647\tttwid\ttest_ttwid_value\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write(content)
+            tmp_path = f.name
+        try:
+            res = AuthChecker.test_authentication("custom_file", custom_cookie_path=tmp_path, platform="tiktok")
+            self.assertTrue(res.success)
+            self.assertEqual(res.status_code, AuthStatusCode.TIKTOK_SESSION_AUTHENTICATED)
+            self.assertIn("TikTok cookies found", res.reason)
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+
+    def test_tiktok_cookie_file_no_tiktok_cookies(self):
+        """Verify cookie file without TikTok cookies returns NO_TIKTOK_COOKIES."""
+        content = (
+            "# Netscape HTTP Cookie File\n"
+            ".youtube.com\tTRUE\t/\tTRUE\t2147483647\tLOGIN_INFO\tsecret\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write(content)
+            tmp_path = f.name
+        try:
+            res = AuthChecker.test_authentication("custom_file", custom_cookie_path=tmp_path, platform="tiktok")
+            self.assertFalse(res.success)
+            self.assertEqual(res.status_code, AuthStatusCode.NO_TIKTOK_COOKIES)
+            self.assertIn("contains no TikTok", res.reason)
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+
+    def test_all_cookie_file_verification_success(self):
+        """Verify universal 'all' cookie file verification detects multiple domains."""
+        content = (
+            "# Netscape HTTP Cookie File\n"
+            ".youtube.com\tTRUE\t/\tTRUE\t2147483647\tLOGIN_INFO\tsecret\n"
+            ".tiktok.com\tTRUE\t/\tTRUE\t2147483647\tsessionid\tsecret_tt\n"
+        )
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
+            f.write(content)
+            tmp_path = f.name
+        try:
+            res = AuthChecker.test_authentication("custom_file", custom_cookie_path=tmp_path, platform="all")
+            self.assertTrue(res.success)
+            self.assertEqual(res.status_code, AuthStatusCode.ALL_SESSION_AUTHENTICATED)
+            self.assertIn("Universal cookie file successfully loaded", res.reason)
+        finally:
+            Path(tmp_path).unlink(missing_ok=True)
+
 if __name__ == "__main__":
     unittest.main()

@@ -254,8 +254,7 @@ class SettingsDialog(QDialog):
         from core.platform import PlatformRegistry
 
         self._current_auth_platform = self.settings_manager.get("selected_platform", "youtube")
-
-        if not PlatformRegistry.is_available(self._current_auth_platform):
+        if self._current_auth_platform != "all" and not PlatformRegistry.is_available(self._current_auth_platform):
 
             self._current_auth_platform = "youtube"
 
@@ -952,10 +951,10 @@ class SettingsDialog(QDialog):
         self.auth_platform_combo = QComboBox()
 
         self.auth_platform_combo.setFixedWidth(130)
-
+        self.auth_platform_combo.addItem(tr("platform_all"), "all")
         self.auth_platform_combo.addItem("YouTube", "youtube")
-
         self.auth_platform_combo.addItem("YouTube Music", "youtubemusic")
+        self.auth_platform_combo.addItem("TikTok", "tiktok")
 
         self.auth_platform_combo.addItem("Facebook", "facebook")
 
@@ -1868,6 +1867,11 @@ class SettingsDialog(QDialog):
         elif status in (
 
             AuthStatusCode.YOUTUBE_SESSION_AUTHENTICATED,
+            getattr(AuthStatusCode, "TIKTOK_SESSION_AUTHENTICATED", "TIKTOK_SESSION_AUTHENTICATED"),
+            getattr(AuthStatusCode, "ALL_SESSION_AUTHENTICATED", "ALL_SESSION_AUTHENTICATED"),
+            getattr(AuthStatusCode, "FACEBOOK_SESSION_AUTHENTICATED", "FACEBOOK_SESSION_AUTHENTICATED"),
+            getattr(AuthStatusCode, "INSTAGRAM_SESSION_AUTHENTICATED", "INSTAGRAM_SESSION_AUTHENTICATED"),
+            getattr(AuthStatusCode, "X_SESSION_AUTHENTICATED", "X_SESSION_AUTHENTICATED"),
 
             getattr(AuthStatusCode, "BILIBILI_SESSION_AUTHENTICATED", "BILIBILI_SESSION_AUTHENTICATED"),
 
@@ -1896,6 +1900,10 @@ class SettingsDialog(QDialog):
             elif self._current_auth_platform == "bilibili":
 
                 sess_label = tr("status_bilibili_session_detected")
+            elif self._current_auth_platform == "tiktok":
+                sess_label = tr("status_tiktok_session_detected")
+            elif self._current_auth_platform == "all":
+                sess_label = tr("status_all_session_detected")
 
             else:
 
@@ -1924,6 +1932,10 @@ class SettingsDialog(QDialog):
             getattr(AuthStatusCode, "NO_DOUYIN_COOKIES", "NO_DOUYIN_COOKIES"),
 
             getattr(AuthStatusCode, "NO_BILIBILI_COOKIES", "NO_BILIBILI_COOKIES"),
+            getattr(AuthStatusCode, "NO_FACEBOOK_COOKIES", "NO_FACEBOOK_COOKIES"),
+            getattr(AuthStatusCode, "NO_INSTAGRAM_COOKIES", "NO_INSTAGRAM_COOKIES"),
+            getattr(AuthStatusCode, "NO_X_COOKIES", "NO_X_COOKIES"),
+            getattr(AuthStatusCode, "NO_TIKTOK_COOKIES", "NO_TIKTOK_COOKIES"),
 
             AuthStatusCode.NO_YOUTUBE_COOKIES,
 
@@ -1977,7 +1989,7 @@ class SettingsDialog(QDialog):
 
                 continue
 
-            is_avail = PlatformRegistry.is_available(plat_id)
+            is_avail = (plat_id == "all") or PlatformRegistry.is_available(plat_id)
 
             if is_avail:
 
@@ -2005,6 +2017,25 @@ class SettingsDialog(QDialog):
 
 
 
+    def _get_auth_prefix(self) -> str:
+        """Returns settings key prefix for the currently active authentication platform."""
+        plat = getattr(self, "_current_auth_platform", "youtube")
+        if plat == "douyin":
+            return "douyin_"
+        elif plat == "bilibili":
+            return "bilibili_"
+        elif plat == "facebook":
+            return "facebook_"
+        elif plat == "instagram":
+            return "instagram_"
+        elif plat == "x":
+            return "x_"
+        elif plat == "tiktok":
+            return "tiktok_"
+        elif plat == "all":
+            return "all_"
+        return ""
+
     def _on_auth_platform_changed(self, index: int) -> None:
 
         """Handles switching the authentication platform target between YouTube and Douyin."""
@@ -2012,8 +2043,7 @@ class SettingsDialog(QDialog):
         selected = self.auth_platform_combo.currentData() or "youtube"
 
         from core.platform import PlatformRegistry
-
-        if not PlatformRegistry.is_available(selected):
+        if selected != "all" and not PlatformRegistry.is_available(selected):
 
             fallback = "youtube"
 
@@ -2096,6 +2126,18 @@ class SettingsDialog(QDialog):
             self._test_browser_btn.setToolTip(tr("auth_test_bilibili_tooltip"))
 
             self._test_file_btn.setToolTip(tr("auth_test_bilibili_tooltip"))
+        elif selected == "tiktok":
+            self.none_hint_lbl.setText(tr("auth_tiktok_none_hint"))
+            self.browser_hint_lbl.setText(tr("auth_tiktok_hint"))
+            self.cookie_privacy_lbl.setText(f"🔒 <i>{tr('auth_tiktok_privacy_notice')}</i>")
+            self._test_browser_btn.setToolTip(tr("auth_test_tiktok_tooltip"))
+            self._test_file_btn.setToolTip(tr("auth_test_tiktok_tooltip"))
+        elif selected == "all":
+            self.none_hint_lbl.setText(tr("auth_all_none_hint"))
+            self.browser_hint_lbl.setText(tr("auth_all_hint"))
+            self.cookie_privacy_lbl.setText(f"🔒 <i>{tr('auth_all_privacy_notice')}</i>")
+            self._test_browser_btn.setToolTip(tr("auth_test_all_tooltip"))
+            self._test_file_btn.setToolTip(tr("auth_test_all_tooltip"))
 
         else:
 
@@ -2133,7 +2175,7 @@ class SettingsDialog(QDialog):
 
         """Synchronizes UI controls with persistent authentication settings."""
 
-        pfx = "douyin_" if self._current_auth_platform == "douyin" else ("bilibili_" if self._current_auth_platform == "bilibili" else ("facebook_" if self._current_auth_platform == "facebook" else ("instagram_" if self._current_auth_platform == "instagram" else ("x_" if self._current_auth_platform == "x" else ""))))
+        pfx = self._get_auth_prefix()
 
         raw_auth_method = self.settings_manager.get(f"{pfx}auth_method", "none")
 
@@ -2301,7 +2343,7 @@ class SettingsDialog(QDialog):
 
 
 
-        pfx = "douyin_" if self._current_auth_platform == "douyin" else ("bilibili_" if self._current_auth_platform == "bilibili" else ("facebook_" if self._current_auth_platform == "facebook" else ("instagram_" if self._current_auth_platform == "instagram" else ("x_" if self._current_auth_platform == "x" else ""))))
+        pfx = self._get_auth_prefix()
 
         target = selected_profile or self.settings_manager.get(f"{pfx}browser_profile", "Default")
 
@@ -2323,7 +2365,7 @@ class SettingsDialog(QDialog):
 
         """Handles switching between None (0), Browser Cookies (1), and Custom Cookie File (2)."""
 
-        pfx = "douyin_" if self._current_auth_platform == "douyin" else ("bilibili_" if self._current_auth_platform == "bilibili" else ("facebook_" if self._current_auth_platform == "facebook" else ("instagram_" if self._current_auth_platform == "instagram" else ("x_" if self._current_auth_platform == "x" else ""))))
+        pfx = self._get_auth_prefix()
 
         method_map = {0: "none", 1: "browser", 2: "custom_file"}
 
@@ -2383,7 +2425,7 @@ class SettingsDialog(QDialog):
 
         """Persists the selected browser cookies authentication setting."""
 
-        pfx = "douyin_" if self._current_auth_platform == "douyin" else ("bilibili_" if self._current_auth_platform == "bilibili" else ("facebook_" if self._current_auth_platform == "facebook" else ("instagram_" if self._current_auth_platform == "instagram" else ("x_" if self._current_auth_platform == "x" else ""))))
+        pfx = self._get_auth_prefix()
 
         browser_choice = self.browser_combo.currentData() or "chrome"
 
@@ -2403,7 +2445,7 @@ class SettingsDialog(QDialog):
 
         """Persists the selected browser profile."""
 
-        pfx = "douyin_" if self._current_auth_platform == "douyin" else ("bilibili_" if self._current_auth_platform == "bilibili" else ("facebook_" if self._current_auth_platform == "facebook" else ("instagram_" if self._current_auth_platform == "instagram" else ("x_" if self._current_auth_platform == "x" else ""))))
+        pfx = self._get_auth_prefix()
 
         profile_choice = self.profile_combo.currentText() or "Default"
 
@@ -2553,7 +2595,7 @@ class SettingsDialog(QDialog):
 
         """Persists the custom cookie file path and updates validation."""
 
-        pfx = "douyin_" if self._current_auth_platform == "douyin" else ("bilibili_" if self._current_auth_platform == "bilibili" else ("facebook_" if self._current_auth_platform == "facebook" else ("instagram_" if self._current_auth_platform == "instagram" else ("x_" if self._current_auth_platform == "x" else ""))))
+        pfx = self._get_auth_prefix()
 
         path = text.strip()
 
@@ -2567,7 +2609,7 @@ class SettingsDialog(QDialog):
 
         """Opens a file dialog to select an exported Netscape cookies.txt file."""
 
-        pfx = "douyin_" if self._current_auth_platform == "douyin" else ("bilibili_" if self._current_auth_platform == "bilibili" else ("facebook_" if self._current_auth_platform == "facebook" else ("instagram_" if self._current_auth_platform == "instagram" else ("x_" if self._current_auth_platform == "x" else ""))))
+        pfx = self._get_auth_prefix()
 
         current_dir = ""
 
@@ -2611,7 +2653,7 @@ class SettingsDialog(QDialog):
 
         """Clears the cookie file path setting without deleting the file on disk."""
 
-        pfx = "douyin_" if self._current_auth_platform == "douyin" else ("bilibili_" if self._current_auth_platform == "bilibili" else ("facebook_" if self._current_auth_platform == "facebook" else ("instagram_" if self._current_auth_platform == "instagram" else ("x_" if self._current_auth_platform == "x" else ""))))
+        pfx = self._get_auth_prefix()
 
         if hasattr(self, "cookie_file_edit"):
 
@@ -3121,7 +3163,7 @@ class SettingsDialog(QDialog):
 
         """Backward compatible delegate for testing auth."""
 
-        pfx = "douyin_" if self._current_auth_platform == "douyin" else ("bilibili_" if self._current_auth_platform == "bilibili" else ("facebook_" if self._current_auth_platform == "facebook" else ("instagram_" if self._current_auth_platform == "instagram" else ("x_" if self._current_auth_platform == "x" else ""))))
+        pfx = self._get_auth_prefix()
 
         auth_method = self.settings_manager.get(f"{pfx}auth_method", "none")
 
@@ -3165,7 +3207,7 @@ class SettingsDialog(QDialog):
 
 
 
-        pfx = "douyin_" if self._current_auth_platform == "douyin" else ("bilibili_" if self._current_auth_platform == "bilibili" else ("facebook_" if self._current_auth_platform == "facebook" else ("instagram_" if self._current_auth_platform == "instagram" else ("x_" if self._current_auth_platform == "x" else ""))))
+        pfx = self._get_auth_prefix()
 
         self._last_auth_result = result
 
@@ -3206,6 +3248,10 @@ class SettingsDialog(QDialog):
         elif self._current_auth_platform == "bilibili":
 
             sess_text = tr("status_bilibili_session_detected")
+        elif self._current_auth_platform == "tiktok":
+            sess_text = tr("status_tiktok_session_detected")
+        elif self._current_auth_platform == "all":
+            sess_text = tr("status_all_session_detected")
 
         else:
 
@@ -3325,7 +3371,7 @@ class SettingsDialog(QDialog):
 
         else:
 
-            pfx = "douyin_" if self._current_auth_platform == "douyin" else ("bilibili_" if self._current_auth_platform == "bilibili" else ("facebook_" if self._current_auth_platform == "facebook" else ("instagram_" if self._current_auth_platform == "instagram" else ("x_" if self._current_auth_platform == "x" else ""))))
+            pfx = self._get_auth_prefix()
 
             auth_method = self.settings_manager.get(f"{pfx}auth_method", "none")
 
@@ -3372,6 +3418,12 @@ class SettingsDialog(QDialog):
                     r_hint = tr("auth_bilibili_none_hint")
 
                     s_action = tr("auth_bilibili_hint")
+                elif self._current_auth_platform == "tiktok":
+                    r_hint = tr("auth_tiktok_none_hint")
+                    s_action = tr("auth_tiktok_hint")
+                elif self._current_auth_platform == "all":
+                    r_hint = tr("auth_all_none_hint")
+                    s_action = tr("auth_all_hint")
 
                 else:
 
@@ -3652,8 +3704,11 @@ class SettingsDialog(QDialog):
             for i in range(self.auth_platform_combo.count()):
 
                 d = self.auth_platform_combo.itemData(i)
-
-                if d == "youtube":
+                if d == "all":
+                    self.auth_platform_combo.setItemText(i, tr("platform_all"))
+                elif d == "tiktok":
+                    self.auth_platform_combo.setItemText(i, "TikTok")
+                elif d == "youtube":
 
                     self.auth_platform_combo.setItemText(i, "YouTube")
 
@@ -3739,6 +3794,14 @@ class SettingsDialog(QDialog):
 
                 self.none_hint_lbl.setText(tr("auth_bilibili_none_hint"))
 
+            elif self._current_auth_platform == "tiktok":
+
+                self.none_hint_lbl.setText(tr("auth_tiktok_none_hint"))
+
+            elif self._current_auth_platform == "all":
+
+                self.none_hint_lbl.setText(tr("auth_all_none_hint"))
+
             else:
 
                 self.none_hint_lbl.setText(tr("auth_none_hint"))
@@ -3817,6 +3880,14 @@ class SettingsDialog(QDialog):
 
                 self.browser_hint_lbl.setText(tr("auth_bilibili_hint"))
 
+            elif self._current_auth_platform == "tiktok":
+
+                self.browser_hint_lbl.setText(tr("auth_tiktok_hint"))
+
+            elif self._current_auth_platform == "all":
+
+                self.browser_hint_lbl.setText(tr("auth_all_hint"))
+
             else:
 
                 self.browser_hint_lbl.setText(tr("settings_cookies_hint"))
@@ -3875,6 +3946,14 @@ class SettingsDialog(QDialog):
 
                 self.cookie_privacy_lbl.setText(f"🔒 <i>{tr('auth_bilibili_privacy_notice')}</i>")
 
+            elif self._current_auth_platform == "tiktok":
+
+                self.cookie_privacy_lbl.setText(f"🔒 <i>{tr('auth_tiktok_privacy_notice')}</i>")
+
+            elif self._current_auth_platform == "all":
+
+                self.cookie_privacy_lbl.setText(f"🔒 <i>{tr('auth_all_privacy_notice')}</i>")
+
             else:
 
                 self.cookie_privacy_lbl.setText(f"🔒 <i>{tr('auth_cookie_file_privacy_notice')}</i>")
@@ -3889,7 +3968,7 @@ class SettingsDialog(QDialog):
 
         if hasattr(self, "auth_last_test_lbl"):
 
-            pfx = "douyin_" if self._current_auth_platform == "douyin" else ("bilibili_" if self._current_auth_platform == "bilibili" else ("facebook_" if self._current_auth_platform == "facebook" else ("instagram_" if self._current_auth_platform == "instagram" else ("x_" if self._current_auth_platform == "x" else ""))))
+            pfx = self._get_auth_prefix()
 
             last_s = self.settings_manager.get(f"{pfx}last_auth_status", "NOT_CONFIGURED")
 

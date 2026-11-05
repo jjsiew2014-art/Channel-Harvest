@@ -35,7 +35,7 @@ class LyricsManager:
     LRCLIB_URL = "https://lrclib.net/api/search"
     LRCLIB_GET_URL = "https://lrclib.net/api/get"
     DEFAULT_HEADERS = {
-        "User-Agent": "ChannelHarvest/1.4.0 (https://github.com/channel-harvest)",
+        "User-Agent": "ChannelHarvest/1.4.1 (https://github.com/channel-harvest)",
     }
 
     KNOWN_ALIASES = [

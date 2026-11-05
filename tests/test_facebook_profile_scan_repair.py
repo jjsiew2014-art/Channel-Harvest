@@ -54,9 +54,19 @@ class TestFacebookProfileScanRepair(unittest.TestCase):
             inventory=self.inventory,
             gallerydl_engine=self.mock_gallerydl,
         )
+        from downloader.profile_video_discovery_engine import FacebookVideoDiscoveryStrategy
+        self.comet_patcher = patch.object(FacebookVideoDiscoveryStrategy, "_query_comet_api", return_value=[])
+        self.comet_patcher.start()
+        self.comet_tokens_patcher = patch("core.platform.facebook_comet.FacebookCometClient.extract_page_tokens", return_value={})
+        self.comet_tokens_patcher.start()
 
     def tearDown(self):
         try:
+            if hasattr(self, "comet_tokens_patcher"):
+                self.comet_tokens_tokens_patcher = None
+                self.comet_tokens_patcher.stop()
+            if hasattr(self, "comet_patcher"):
+                self.comet_patcher.stop()
             self.temp_dir.cleanup()
         except Exception:
             pass

@@ -302,6 +302,7 @@ class BaseVideoDiscoveryStrategy:
         progress_callback: Optional[Callable[[int, str], None]] = None,
         log_callback: Optional[Callable[[str], None]] = None,
         timeout: float = 120.0,
+        raw_records: Optional[List[Dict[str, Any]]] = None,
     ) -> ProfileVideoDiscoveryResult:
         raise NotImplementedError
 
@@ -460,6 +461,141 @@ class FacebookVideoDiscoveryStrategy(BaseVideoDiscoveryStrategy):
 
         return raw_items
 
+
+    def _query_comet_api(
+        self,
+        profile_url: str,
+        custom_cookie_file: Optional[str] = None,
+        cancel_token: Optional[Callable[[], bool]] = None,
+        progress_callback: Optional[Callable[[int, str], None]] = None,
+        log_callback: Optional[Callable[[str], None]] = None,
+        timeout: float = 30.0,
+        diagnostics: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Enumerates videos and Reels via Facebook Comet desktop GraphQL endpoints.
+        Activated when valid Facebook authentication cookies are provided.
+        """
+        from core.platform.facebook_comet import (
+            FacebookCometClient,
+            FacebookCometError,
+            FacebookCometAuthError,
+            FacebookCometRateLimitError,
+        )
+
+        if diagnostics is None:
+            diagnostics = {}
+
+        raw_items: List[Dict[str, Any]] = []
+
+        try:
+            client = FacebookCometClient(
+                cookie_file=custom_cookie_file,
+                timeout=timeout,
+                request_delay=1.0,
+            )
+            diagnostics["comet_cookies_loaded"] = client.has_cookies
+
+            tokens = client.extract_page_tokens(
+                profile_url,
+                is_cancelled=cancel_token,
+                log_callback=log_callback,
+            )
+
+            if not tokens:
+                diagnostics["failure_reason"] = "COMET_CONNECT_FAILED"
+                diagnostics["error"] = "Unable to connect to Facebook profile or extract initial page tokens."
+                return []
+
+            if tokens.get("is_login_redirect") and not tokens.get("lsd"):
+                diagnostics["failure_reason"] = "AUTH_REQUIRED"
+                diagnostics["error"] = "Facebook session expired or login required. Please verify your cookie file."
+                if log_callback:
+                    log_callback("[COMET] Facebook redirected to login page. Cookie authentication required.")
+                return []
+
+            page_id = tokens.get("page_id") or self._extract_page_identifier(profile_url)
+            reels_page_id = tokens.get("reels_page_id") or page_id
+            lsd = tokens.get("lsd", "")
+            dtsg = tokens.get("dtsg", "")
+
+            diagnostics["comet_page_id"] = page_id
+            diagnostics["comet_reels_page_id"] = reels_page_id
+
+            if not page_id and not reels_page_id:
+                diagnostics["failure_reason"] = "COMET_PAGE_ID_NOT_FOUND"
+                diagnostics["error"] = "Could not identify Facebook Page ID or User ID from profile URL."
+                return []
+
+            # 1. Enumerate Standard Videos
+            if page_id and lsd and not (cancel_token and cancel_token()):
+                if log_callback:
+                    log_callback(f"[COMET] Querying Facebook Comet video tab for Page ID: {page_id}")
+                videos = client.scan_videos(
+                    page_id=page_id,
+                    lsd=lsd,
+                    dtsg=dtsg,
+                    profile_url=profile_url,
+                    max_count=100,
+                    is_cancelled=cancel_token,
+                    progress_callback=progress_callback,
+                    log_callback=log_callback,
+                )
+                for v in videos:
+                    raw_items.append({
+                        "type": "video",
+                        "video_id": v["id"],
+                        "url": v["url"],
+                        "title": v.get("title", f"Facebook Video {v['id']}"),
+                        "duration": v.get("duration"),
+                        "thumbnail": v.get("thumbnail"),
+                        "user_id": page_id,
+                        "discovery_method": "facebook_comet_graphql",
+                    })
+                diagnostics["comet_videos_count"] = len(videos)
+
+            # 2. Enumerate Reels
+            if reels_page_id and lsd and not (cancel_token and cancel_token()):
+                if log_callback:
+                    log_callback(f"[COMET] Querying Facebook Comet Reels tab for ID: {reels_page_id}")
+                reels = client.scan_reels(
+                    reels_page_id=reels_page_id,
+                    lsd=lsd,
+                    dtsg=dtsg,
+                    profile_url=profile_url,
+                    max_count=100,
+                    is_cancelled=cancel_token,
+                    progress_callback=progress_callback,
+                    log_callback=log_callback,
+                )
+                for r in reels:
+                    raw_items.append({
+                        "type": "reel",
+                        "video_id": r["id"],
+                        "url": r["url"],
+                        "title": r.get("title", f"Facebook Reel {r['id']}"),
+                        "thumbnail": r.get("thumbnail"),
+                        "user_id": reels_page_id,
+                        "discovery_method": "facebook_comet_graphql",
+                    })
+                diagnostics["comet_reels_count"] = len(reels)
+
+            diagnostics["comet_total_items"] = len(raw_items)
+
+        except FacebookCometRateLimitError as rle:
+            diagnostics["failure_reason"] = "RATE_LIMITED"
+            diagnostics["error"] = str(rle)
+            if log_callback:
+                log_callback(f"[COMET WARNING] Rate limited by Facebook: {rle}")
+        except Exception as e:
+            _logger.error("Error during Facebook Comet discovery: %s", e)
+            diagnostics["comet_error"] = str(e)
+            if not raw_items:
+                diagnostics["failure_reason"] = "COMET_DISCOVERY_ERROR"
+                diagnostics["error"] = str(e)
+
+        return raw_items
+
     def _parse_raw_records(
         self,
         raw_records: List[Dict[str, Any]],
@@ -543,7 +679,7 @@ class FacebookVideoDiscoveryStrategy(BaseVideoDiscoveryStrategy):
                 upload_date=str(rec.get("date") or rec.get("upload_date") or ""),
                 discovery_method="facebook_video_extractor",
                 discovery_status="discovered",
-                metadata_status="pending",
+                metadata_status="extracted" if rec.get("discovery_method") == "facebook_comet_graphql" else "pending",
                 authentication_state="custom_cookie" if custom_cookie_file else "none",
                 deduplication_key=dedup_key,
                 diagnostic_details={"raw_category": cat, "raw_type": rec_type},
@@ -731,6 +867,64 @@ class FacebookVideoDiscoveryStrategy(BaseVideoDiscoveryStrategy):
                         failure_reason=diagnostics["failure_reason"],
                     )
 
+
+        # Strategy C: Facebook Comet Web Discovery (Clean-Room Python GraphQL)
+        # Supports both authenticated (cookie file) and unauthenticated (public pages) discovery without API tokens.
+        effective_cookie_file = custom_cookie_file
+        if not effective_cookie_file and auth_config:
+            if hasattr(auth_config, "cookie_file") and auth_config.cookie_file:
+                effective_cookie_file = auth_config.cookie_file
+            elif isinstance(auth_config, dict) and auth_config.get("cookie_file"):
+                effective_cookie_file = auth_config.get("cookie_file")
+
+        valid_cookie_file = None
+        if effective_cookie_file and Path(effective_cookie_file).is_file():
+            valid_cookie_file = str(Path(effective_cookie_file).resolve())
+
+        if log_callback:
+            if valid_cookie_file:
+                log_callback("[VIDEO DISCOVERY] Initiating Facebook Comet GraphQL discovery with cookie file...")
+            else:
+                log_callback("[VIDEO DISCOVERY] Initiating Facebook Comet GraphQL discovery (unauthenticated/public page mode)...")
+
+        comet_records = self._query_comet_api(
+            profile_url=profile_url,
+            custom_cookie_file=valid_cookie_file,
+            cancel_token=cancel_token,
+            progress_callback=progress_callback,
+            log_callback=log_callback,
+            timeout=min(timeout, 20.0),
+            diagnostics=diagnostics,
+        )
+        if comet_records:
+            candidates = self._parse_raw_records(
+                raw_records=comet_records,
+                profile_url=profile_url,
+                custom_cookie_file=valid_cookie_file,
+                diagnostics=diagnostics,
+                progress_callback=progress_callback,
+                cancel_token=cancel_token,
+            )
+            elapsed = time.time() - start_time
+            diagnostics["elapsed_seconds"] = round(elapsed, 2)
+            diagnostics["discovery_method"] = "facebook_comet_graphql"
+            return ProfileVideoDiscoveryResult(
+                candidates=candidates,
+                status=ScanCompleteness.COMPLETE if candidates else ScanCompleteness.FAILED,
+                diagnostics=diagnostics,
+                error=None if candidates else "Comet discovery finished but yielded 0 video/reel candidates",
+            )
+        elif diagnostics.get("failure_reason") and diagnostics.get("failure_reason") not in ("COMET_DISCOVERY_ERROR", "COMET_CONNECT_FAILED", "COMET_PAGE_ID_NOT_FOUND"):
+            elapsed = time.time() - start_time
+            diagnostics["elapsed_seconds"] = round(elapsed, 2)
+            return ProfileVideoDiscoveryResult(
+                candidates=[],
+                status=ScanCompleteness.FAILED,
+                diagnostics=diagnostics,
+                error=diagnostics.get("error") or "Facebook Comet discovery returned no candidates",
+                failure_reason=diagnostics["failure_reason"],
+            )
+
         # Strategy A (Default Installed Extractors):
         # Neither gallery-dl nor yt-dlp supports Facebook profile video enumeration.
         # Do NOT probe unsupported /videos/ or /reels/ endpoints.
@@ -789,6 +983,7 @@ class InstagramVideoDiscoveryStrategy(BaseVideoDiscoveryStrategy):
         progress_callback: Optional[Callable[[int, str], None]] = None,
         log_callback: Optional[Callable[[str], None]] = None,
         timeout: float = 120.0,
+        raw_records: Optional[List[Dict[str, Any]]] = None,
     ) -> ProfileVideoDiscoveryResult:
         """
         Executes bounded, independent Instagram video and Reel discovery.
@@ -869,98 +1064,167 @@ class InstagramVideoDiscoveryStrategy(BaseVideoDiscoveryStrategy):
             except Exception as e:
                 diagnostics["error"] = str(e)
 
-        # Step 1: Flat profile extraction via yt-dlp
-        import yt_dlp
-        ydl_opts: Dict[str, Any] = {
-            "extract_flat": "in_playlist",
-            "skip_download": True,
-            "quiet": True,
-            "no_warnings": True,
-            "socket_timeout": 15,
-            "ignoreerrors": True,
-        }
-        if custom_cookie_file and Path(custom_cookie_file).is_file():
-            ydl_opts["cookiefile"] = str(Path(custom_cookie_file).resolve())
+        ig_raw_items: List[Dict[str, Any]] = []
+        valid_cookie = custom_cookie_file if (custom_cookie_file and Path(custom_cookie_file).is_file()) else None
+        username = None
+        user_id = None
 
-        info: Optional[Dict[str, Any]] = None
-        ytdlp_failed = False
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(profile_url, download=False)
-        except Exception as e:
-            ytdlp_failed = True
-            diagnostics["ytdlp_error"] = str(e)
-            if log_callback:
-                log_callback(f"[VIDEO DISCOVERY NOTICE] yt-dlp flat discovery notice: {e}")
+        if raw_records is not None:
+            ig_raw_items = list(raw_records)
+            diagnostics["raw_records_provided"] = len(raw_records)
+            diagnostics["discovery_method"] = "profile_scan_manager_cache"
+        else:
+            # Step 1: Query Instagram Web (Polaris GraphQL & REST fallback)
+            try:
+                from core.platform.instagram_web import (
+                    InstagramWebClient,
+                    InstagramWebError,
+                    InstagramRateLimitError,
+                    format_instagram_caption_title,
+                )
+                ig_client = InstagramWebClient(cookie_file=valid_cookie, timeout=min(timeout, 30.0))
+                diagnostics["instagram_web_cookies_loaded"] = ig_client.has_cookies
 
-        entries = (info.get("entries") or []) if info else []
-        diagnostics["total_entries"] = len(entries)
+                if log_callback:
+                    log_callback(f"[VIDEO DISCOVERY] Initiating Instagram Web discovery on {PrivacySanitizer.sanitize(profile_url)}...")
 
-        for idx, entry in enumerate(entries, start=1):
+                info = ig_client.extract_profile_info(profile_url, is_cancelled=cancel_token, log_callback=log_callback)
+                username = info.get("username")
+                user_id = info.get("user_id")
+                lsd = info.get("lsd", "")
+                dtsg = info.get("dtsg", "")
+
+                diagnostics["instagram_username"] = username
+                diagnostics["instagram_user_id"] = user_id
+
+                is_reels_url = any(k in profile_url.lower() for k in ("/reels", "/reel"))
+
+                def _query_reels():
+                    if user_id and not (cancel_token and cancel_token()):
+                        if log_callback:
+                            log_callback(f"[INSTAGRAM] Querying Instagram Reels tab for User ID: {user_id}")
+                        reels = ig_client.scan_reels(
+                            user_id=user_id,
+                            username=username or "",
+                            lsd=lsd,
+                            dtsg=dtsg,
+                            profile_url=profile_url,
+                            max_count=None,
+                            is_cancelled=cancel_token,
+                            progress_callback=progress_callback,
+                            log_callback=log_callback,
+                        )
+                        ig_raw_items.extend(reels)
+                        diagnostics["instagram_reels_count"] = len(reels)
+
+                def _query_posts():
+                    if username and not (cancel_token and cancel_token()):
+                        if log_callback:
+                            log_callback(f"[INSTAGRAM] Querying Instagram timeline posts for @{username}...")
+                        posts = ig_client.scan_posts(
+                            username=username,
+                            user_id=user_id,
+                            lsd=lsd,
+                            dtsg=dtsg,
+                            profile_url=profile_url,
+                            max_count=None,
+                            is_cancelled=cancel_token,
+                            progress_callback=progress_callback,
+                            log_callback=log_callback,
+                        )
+                        video_posts = [p for p in posts if p.get("type") in ("video", "reel")]
+                        ig_raw_items.extend(video_posts)
+                        diagnostics["instagram_posts_video_count"] = len(video_posts)
+
+                if is_reels_url:
+                    _query_reels()
+                    if not ig_raw_items:
+                        _query_posts()
+                else:
+                    _query_posts()
+                    _query_reels()
+            except Exception as e:
+                _logger.debug("Instagram Web discovery notice: %s", e)
+
+        for rec in ig_raw_items:
             if cancel_token and cancel_token():
                 diagnostics["cancelled"] = True
                 break
-            if not entry or not isinstance(entry, dict):
-                continue
 
-            entry_id = str(entry.get("id") or "")
-            entry_url = entry.get("url") or ""
-            ie_key = str(entry.get("ie_key") or "").lower()
-
-            # Build full video URL
-            if not entry_url.startswith("http"):
-                if "reel" in ie_key:
-                    target_url = f"https://www.instagram.com/reel/{entry_id}/"
-                else:
-                    target_url = f"https://www.instagram.com/p/{entry_id}/"
-            else:
-                target_url = entry_url
+            vid_id = str(rec.get("id") or "")
+            post_url = rec.get("post_url") or ""
+            direct_url = rec.get("direct_url") or ""
+            rec_type = rec.get("type", "video")
+            target_url = post_url or (f"https://www.instagram.com/reel/{rec.get('code')}/" if rec_type == "reel" and rec.get("code") else f"https://www.instagram.com/p/{rec.get('code')}/" if rec.get("code") else direct_url)
 
             is_val, reason, val_info = VideoCandidateValidator.validate_candidate_url(target_url, "instagram")
-            if not is_val:
-                diagnostics["rejected_urls"] += 1
+            if not is_val and direct_url:
+                resolved_url = target_url or direct_url
+                resolved_id = vid_id or f"ig_cand_{len(candidates) + 1}"
+                media_type = MediaType.REEL if rec_type == "reel" else MediaType.VIDEO
+            elif is_val:
+                resolved_url = val_info.get("canonical_url") or target_url
+                resolved_id = val_info.get("media_id") or vid_id
+                media_type = val_info.get("media_type") or (MediaType.REEL if rec_type == "reel" else MediaType.VIDEO)
+            else:
+                diagnostics["rejected_urls"] = diagnostics.get("rejected_urls", 0) + 1
                 continue
 
-            media_id = val_info.get("media_id") or entry_id or f"ig_cand_{idx}"
-            canonical = val_info.get("canonical_url") or target_url
-            media_type = val_info.get("media_type") or MediaType.VIDEO
-            dedup_key = f"instagram_video_{media_id}"
-
-            if media_id in seen_media_ids or canonical in seen_urls or dedup_key in seen_media_ids:
-                diagnostics["duplicate_candidates"] += 1
+            dedup_key = f"instagram_video_{resolved_id}"
+            if resolved_id in seen_media_ids or resolved_url in seen_urls or dedup_key in seen_media_ids:
+                diagnostics["duplicate_candidates"] = diagnostics.get("duplicate_candidates", 0) + 1
                 continue
 
-            seen_media_ids.add(media_id)
+            seen_media_ids.add(resolved_id)
             seen_media_ids.add(dedup_key)
-            seen_urls.add(canonical)
+            seen_urls.add(resolved_url)
 
-            title = entry.get("title") or f"Instagram {media_type} {media_id}"
-            dur = int(entry["duration"]) if (entry.get("duration") and isinstance(entry["duration"], (int, float)) and entry["duration"] > 0) else None
+            cand_title = rec.get("title") or format_instagram_caption_title(
+                rec.get("caption") or "", fallback=f"Instagram {media_type} {resolved_id}", max_chars=35
+            )
+
+            dur_sec = rec.get("duration")
 
             cand = DiscoveredVideoCandidate(
                 platform="instagram",
                 profile_url=profile_url,
-                video_url=canonical,
-                profile_id=str(entry.get("uploader_id") or ""),
-                media_id=media_id,
-                canonical_webpage_url=canonical,
-                title=title,
+                video_url=resolved_url,
+                profile_id=str(user_id or username or ""),
+                media_id=resolved_id,
+                canonical_webpage_url=resolved_url,
+                title=cand_title,
                 media_type=media_type,
-                duration_seconds=dur,
-                thumbnail_url=entry.get("thumbnail"),
-                upload_date=str(entry.get("upload_date") or ""),
-                discovery_method="ytdlp_flat_playlist",
+                duration_seconds=dur_sec,
+                thumbnail_url=rec.get("thumbnail"),
+                upload_date=str(rec.get("taken_at") or ""),
+                discovery_method="instagram_web_graphql",
                 discovery_status="discovered",
-                metadata_status="pending",
-                authentication_state="custom_cookie" if custom_cookie_file else "none",
+                metadata_status="extracted",
+                authentication_state="custom_cookie" if valid_cookie else "none",
                 deduplication_key=dedup_key,
-                diagnostic_details={"ie_key": ie_key},
+                diagnostic_details={"code": rec.get("code"), "parent_post_id": rec.get("parent_post_id")},
             )
             candidates.append(cand)
             diagnostics["valid_candidates"] = len(candidates)
 
             if progress_callback:
-                progress_callback(len(candidates), f"Discovered Instagram {media_type}: {title[:50]}")
+                progress_callback(len(candidates), f"Discovered Instagram {media_type}: {cand_title[:50]}")
+
+        if candidates:
+            elapsed = time.time() - start_time
+            diagnostics["elapsed_seconds"] = round(elapsed, 2)
+            diagnostics["discovery_method"] = "instagram_web_graphql"
+            if log_callback:
+                log_callback(
+                    f"[VIDEO DISCOVERY] Instagram Web discovery finished in {elapsed:.1f}s | "
+                    f"Status: {ScanCompleteness.COMPLETE} | Candidates: {len(candidates)}"
+                )
+            return ProfileVideoDiscoveryResult(
+                candidates=candidates,
+                status=ScanCompleteness.COMPLETE,
+                diagnostics=diagnostics,
+                error=None,
+            )
 
         # Step 2: Fallback / Complement with gallery-dl Reels extractor if candidates is 0
         if not candidates and not diagnostics["cancelled"] and self.gallerydl.is_available():
@@ -1026,7 +1290,7 @@ class InstagramVideoDiscoveryStrategy(BaseVideoDiscoveryStrategy):
             status = ScanCompleteness.PARTIAL if candidates else ScanCompleteness.FAILED
         elif candidates:
             status = ScanCompleteness.COMPLETE
-        elif ytdlp_failed and not candidates:
+        elif diagnostics.get("error") and not candidates:
             status = ScanCompleteness.FAILED
             diagnostics["error"] = diagnostics.get("ytdlp_error") or "Instagram video discovery failed"
         else:
@@ -1134,7 +1398,7 @@ class ProfileVideoDiscoveryEngine:
             "log_callback": log_callback,
             "timeout": timeout,
         }
-        if raw_records is not None and plat == "facebook":
+        if raw_records is not None and plat in ("facebook", "instagram"):
             kwargs["raw_records"] = raw_records
         return strategy.discover_candidates(**kwargs)
 
@@ -1158,6 +1422,9 @@ class ProfileVideoDiscoveryEngine:
         """
         if is_cancelled and is_cancelled():
             return self._build_video_item_from_candidate(candidate, status=VideoStatus.READY)
+
+        if candidate.metadata_status == "extracted":
+            return self._build_video_item_from_candidate(candidate)
 
         # Validate that the candidate URL is NOT a profile URL
         clean_url = candidate.video_url

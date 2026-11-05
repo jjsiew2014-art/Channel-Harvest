@@ -42,8 +42,17 @@ class TestProfileScanManager(unittest.TestCase):
         from core.models import ScanResult
         self.mock_adapter.scan.return_value = ScanResult(videos=[], source_title="testuser", platform="instagram", url="")
         self.mock_get_adapter.return_value = self.mock_adapter
+        # Mock Facebook Comet client token extraction in unit tests to prevent live network calls
+        self.comet_patcher = patch("core.platform.facebook_comet.FacebookCometClient.extract_page_tokens", return_value={})
+        self.comet_patcher.start()
+        self.ig_patcher = patch("core.platform.instagram_web.InstagramWebClient.extract_profile_info", return_value={})
+        self.ig_patcher.start()
 
     def tearDown(self):
+        if hasattr(self, "ig_patcher"):
+            self.ig_patcher.stop()
+        if hasattr(self, "comet_patcher"):
+            self.comet_patcher.stop()
         self.adapter_patcher.stop()
         self.inventory.close()
         shutil.rmtree(self.temp_dir, ignore_errors=True)
@@ -329,6 +338,43 @@ class TestProfileScanManager(unittest.TestCase):
         with open(report_path, "r", encoding="utf-8") as f:
             content = f.read()
         self.assertEqual(content, report_text)
+
+
+    def test_facebook_comet_photos_title_resolution(self):
+        """Facebook Comet discovered photos preserve authentic title truncated to 35 chars."""
+        self.mock_gallerydl.extract_metadata.return_value = []
+
+        mock_comet_photos = [
+            {
+                "id": "1493250019258573",
+                "direct_url": "https://scontent.net/photo1.jpg",
+                "post_url": "https://www.facebook.com/photo.php?fbid=1493250019258573",
+                "type": "photo",
+                "title": "在此預祝各位樂迷朋友母親節愉快❤️ 願我們的音樂能繼續為您與摯愛之人帶...",
+                "caption": "在此預祝各位樂迷朋友母親節愉快❤️ 願我們的音樂能繼續為您與摯愛之人帶來溫暖、喜悅與美好的回憶 🥰",
+            }
+        ]
+
+        with patch("core.platform.facebook_comet.FacebookCometClient.extract_page_tokens") as mock_tokens,              patch("core.platform.facebook_comet.FacebookCometClient.scan_photos") as mock_scan_photos:
+
+            mock_tokens.return_value = {
+                "photos_by_id": "PHOTOS_COLLECTION_123",
+                "lsd": "MOCK_LSD",
+                "dtsg": "MOCK_DTSG",
+            }
+            mock_scan_photos.return_value = mock_comet_photos
+
+            result = self.scan_manager.scan_profile(
+                url="https://www.facebook.com/HongYongMusic/photos",
+                platform="facebook",
+            )
+
+        self.assertEqual(len(result.videos), 1)
+        item = result.videos[0]
+        self.assertEqual(item.video_id, "fb_photo_1493250019258573")
+        self.assertEqual(item.title, "在此預祝各位樂迷朋友母親節愉快❤️ 願我們的音樂能繼續為您與摯愛之人帶...")
+        self.assertLessEqual(len(item.title.rstrip(".")), 35)
+        self.assertEqual(item.extra_metadata["caption"], "在此預祝各位樂迷朋友母親節愉快❤️ 願我們的音樂能繼續為您與摯愛之人帶來溫暖、喜悅與美好的回憶 🥰")
 
 if __name__ == "__main__":
     unittest.main()

@@ -410,6 +410,10 @@ class DownloadSettings:
     instagram_custom_cookie_file: str = ""
     x_auth_method: str = "none"
     x_custom_cookie_file: str = ""
+    tiktok_auth_method: str = "none"
+    tiktok_custom_cookie_file: str = ""
+    all_auth_method: str = "none"
+    all_custom_cookie_file: str = ""
 
     def __post_init__(self):
         if self.add_number_prefix and not self.add_number_to_filename:

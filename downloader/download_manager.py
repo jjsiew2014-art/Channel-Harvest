@@ -914,6 +914,7 @@ class DownloadManager(QThread):
             inaccessible_cat = None
             last_error_msg = ""
             download_error: Optional[DownloadError] = None
+            info_dict: Optional[Dict[str, Any]] = None
 
             for attempt in range(1, self.MAX_RETRIES + 1):
                 if self._is_cancelled:
@@ -940,6 +941,10 @@ class DownloadManager(QThread):
                             custom_cookie = getattr(self.settings, "instagram_custom_cookie_file", "")
                         elif video_platform == "x":
                             custom_cookie = getattr(self.settings, "x_custom_cookie_file", "")
+                        elif video_platform == "tiktok":
+                            custom_cookie = getattr(self.settings, "tiktok_custom_cookie_file", "")
+                        if not custom_cookie and getattr(self.settings, "all_auth_method", "none") == "custom_file":
+                            custom_cookie = getattr(self.settings, "all_custom_cookie_file", "")
 
                         g_stem = resolve_media_filename(video.title, video.video_id, include_video_id=eff_include_id, target_dir=video_target_dir, number_prefix=num_prefix)
                         g_res = self.gallerydl_engine.download_media(

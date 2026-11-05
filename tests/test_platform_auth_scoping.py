@@ -485,5 +485,94 @@ class TestPlatformAuthScoping(unittest.TestCase):
             self.assertNotIn("cookiefile", opts_tt)
 
 
+    def test_case_tiktok_custom_cookie_file_active(self):
+        """TikTok with custom cookie file configured attaches cookiefile to yt-dlp opts."""
+        tt_cookie = Path(self.tmp_dir.name) / "tiktok_cookies.txt"
+        tt_cookie.write_text("# Netscape HTTP Cookie File\n.tiktok.com\tTRUE\t/\tTRUE\t0\tsessionid\tsecret_tt\n", encoding="utf-8")
+
+        self.settings_manager.set("tiktok_auth_method", "custom_file")
+        self.settings_manager.set("tiktok_custom_cookie_file", str(tt_cookie.resolve()))
+
+        with patch("core.settings.SettingsManager", return_value=self.settings_manager):
+            auth = self.tt_adapter.get_auth_config()
+            self.assertTrue(auth.is_active)
+            self.assertEqual(auth.auth_method, "custom_file")
+            self.assertEqual(auth.cookie_file, str(tt_cookie.resolve()))
+
+            opts_tt = self.engine.build_base_ydl_opts(platform="tiktok")
+            self.assertIn("cookiefile", opts_tt)
+            self.assertEqual(opts_tt["cookiefile"], str(tt_cookie.resolve()))
+
+    def test_case_all_cookie_fallback_when_platform_auth_none(self):
+        """When platform auth is 'none', it falls back to 'all' universal cookie file."""
+        all_cookie = Path(self.tmp_dir.name) / "universal_all_cookies.txt"
+        all_cookie.write_text("# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\tx\n.tiktok.com\tTRUE\t/\tTRUE\t0\tsessionid\ty\n", encoding="utf-8")
+
+        self.settings_manager.set("all_auth_method", "custom_file")
+        self.settings_manager.set("all_custom_cookie_file", str(all_cookie.resolve()))
+
+        # YouTube and TikTok auth are set to 'none'
+        self.settings_manager.set("auth_method", "none")
+        self.settings_manager.set("custom_cookie_file", "")
+        self.settings_manager.set("tiktok_auth_method", "none")
+        self.settings_manager.set("tiktok_custom_cookie_file", "")
+
+        with patch("core.settings.SettingsManager", return_value=self.settings_manager):
+            # TikTok adapter falls back to 'all'
+            tt_auth = self.tt_adapter.get_auth_config()
+            self.assertTrue(tt_auth.is_active)
+            self.assertEqual(tt_auth.cookie_file, str(all_cookie.resolve()))
+            self.assertIn("All Platforms", tt_auth.description)
+
+            opts_tt = self.engine.build_base_ydl_opts(platform="tiktok")
+            self.assertIn("cookiefile", opts_tt)
+            self.assertEqual(opts_tt["cookiefile"], str(all_cookie.resolve()))
+
+            # YouTube adapter falls back to 'all'
+            yt_auth = self.yt_adapter.get_auth_config()
+            self.assertTrue(yt_auth.is_active)
+            self.assertEqual(yt_auth.cookie_file, str(all_cookie.resolve()))
+            self.assertIn("All Platforms", yt_auth.description)
+
+            opts_yt = self.engine.build_base_ydl_opts(platform="youtube")
+            self.assertIn("cookiefile", opts_yt)
+            self.assertEqual(opts_yt["cookiefile"], str(all_cookie.resolve()))
+
+    def test_case_platform_precedence_over_all(self):
+        """Platform-specific auth takes precedence over the 'all' universal cookie file."""
+        all_cookie = Path(self.tmp_dir.name) / "universal_cookies.txt"
+        all_cookie.write_text("# Netscape HTTP Cookie File\n.example.com\tTRUE\t/\tTRUE\t0\tSID\tx\n", encoding="utf-8")
+
+        tt_cookie = Path(self.tmp_dir.name) / "tiktok_override_cookies.txt"
+        tt_cookie.write_text("# Netscape HTTP Cookie File\n.tiktok.com\tTRUE\t/\tTRUE\t0\tsessionid\ty\n", encoding="utf-8")
+
+        self.settings_manager.set("all_auth_method", "custom_file")
+        self.settings_manager.set("all_custom_cookie_file", str(all_cookie.resolve()))
+
+        # TikTok has its own specific cookie file
+        self.settings_manager.set("tiktok_auth_method", "custom_file")
+        self.settings_manager.set("tiktok_custom_cookie_file", str(tt_cookie.resolve()))
+
+        # YouTube auth is none -> should fall back to all
+        self.settings_manager.set("auth_method", "none")
+        self.settings_manager.set("custom_cookie_file", "")
+
+        with patch("core.settings.SettingsManager", return_value=self.settings_manager):
+            # TikTok uses its own, NOT all_cookie
+            tt_auth = self.tt_adapter.get_auth_config()
+            self.assertEqual(tt_auth.cookie_file, str(tt_cookie.resolve()))
+            self.assertNotIn("All Platforms", tt_auth.description)
+
+            opts_tt = self.engine.build_base_ydl_opts(platform="tiktok")
+            self.assertEqual(opts_tt["cookiefile"], str(tt_cookie.resolve()))
+
+            # YouTube falls back to all_cookie
+            yt_auth = self.yt_adapter.get_auth_config()
+            self.assertEqual(yt_auth.cookie_file, str(all_cookie.resolve()))
+            self.assertIn("All Platforms", yt_auth.description)
+
+            opts_yt = self.engine.build_base_ydl_opts(platform="youtube")
+            self.assertEqual(opts_yt["cookiefile"], str(all_cookie.resolve()))
+
 if __name__ == "__main__":
     unittest.main()

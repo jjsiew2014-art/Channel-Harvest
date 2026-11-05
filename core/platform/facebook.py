@@ -74,13 +74,16 @@ def clean_facebook_title(raw_title: str, fallback: str = "") -> str:
         if stripped:
             first_line = stripped.splitlines()[0].strip()
             if first_line:
-                return first_line
+                clean = first_line
+    else:
+        clean = lines[0] if lines else ""
 
     if _FACEBOOK_STAT_ONLY_RE.match(clean):
         return fallback
 
-    return lines[0] if lines else fallback
-
+    # Strip all "#" and full-width "＃" characters and apply Chinese 50 / English 30 word capping
+    from core.platform.facebook_comet import format_caption_title
+    return format_caption_title(clean, fallback=fallback)
 
 class FacebookAdapter(PlatformAdapter):
     @classmethod
@@ -113,8 +116,12 @@ class FacebookAdapter(PlatformAdapter):
         if len(segments) >= 3 and segments[-2].lower() == "videos" and segments[-1].isdigit():
             return False
 
+        # Individual video/reel with explicit root segments (e.g. /reel/<id> or /watch/<id>)
+        if len(segments) >= 2 and segments[0].lower() in ("reel", "watch"):
+            return False
+
         # Profile tabs (photos, videos, reels, posts, about, community)
-        if len(segments) >= 2 and segments[-1].lower() in ("videos", "reels", "photos", "photos_albums", "about", "community", "posts"):
+        if len(segments) >= 2 and segments[-1].lower() in ("videos", "video", "reels", "reel", "photos", "photo", "photos_albums", "about", "community", "posts"):
             return True
 
         if "profile.php" in low_path and "id=" in parsed.query:
@@ -253,8 +260,8 @@ class FacebookAdapter(PlatformAdapter):
             has_video_param = any(k in qs for k in ("v", "video_id", "story_fbid"))
 
             is_watch = path.startswith("/watch") and has_video_param
-            is_reel = "/reel/" in path
-            is_videos = "/videos/" in path or path.endswith("/videos")
+            is_reel = "/reel/" in path or "/reels/" in path or path.rstrip("/").endswith("/reel") or path.rstrip("/").endswith("/reels")
+            is_videos = "/videos/" in path or path.rstrip("/").endswith("/videos")
             is_video_php = "video.php" in path and has_video_param
             is_short = any(host in netloc for host in ("fb.watch", "fb.me")) or "/share/" in path
             is_permalink = ("permalink.php" in path or "/posts/" in path or "/story.php" in path) and (has_video_param or any(c.isdigit() for c in path))
@@ -262,7 +269,7 @@ class FacebookAdapter(PlatformAdapter):
             is_photo = 'photo' in path or 'photo.php' in path or '/photos' in path or 'fbid=' in parsed.query
             is_album = '/media/set' in path or 'set=a.' in parsed.query
             segments = [p for p in path.strip('/').split('/') if p]
-            is_profile = (len(segments) == 1 and not any(k in segments[0].lower() for k in ('home.php', 'messages', 'login.php', 'help', 'settings', 'recover', 'notifications', 'marketplace', 'groups', 'events', 'watch', 'reel'))) or (len(segments) >= 2 and segments[0] in ('pages', 'people') and segments[-1].isdigit()) or ('profile.php' in path and 'id=' in parsed.query)
+            is_profile = self.is_profile_url(cleaned) or (len(segments) == 1 and not any(k in segments[0].lower() for k in ('home.php', 'messages', 'login.php', 'help', 'settings', 'recover', 'notifications', 'marketplace', 'groups', 'events', 'watch', 'reel'))) or (len(segments) >= 2 and segments[0] in ('pages', 'people') and segments[-1].isdigit()) or ('profile.php' in path and 'id=' in parsed.query)
 
             if not (is_watch or is_reel or is_videos or is_video_php or is_short or is_permalink or is_photo or is_album or is_profile):
                 return False, "Unsupported Facebook URL format. Please provide a video or Reel link."
@@ -353,6 +360,7 @@ class FacebookAdapter(PlatformAdapter):
         1. None (auth_method == 'none')
         2. Custom Cookie File (auth_method == 'custom_file' with valid cookie_file path)
         """
+        from pathlib import Path
         auth_method = "none"
         custom_cookie_file = ""
 
@@ -392,6 +400,20 @@ class FacebookAdapter(PlatformAdapter):
                 cookie_file=str(cpath.resolve()),
                 description="Custom Cookie File",
             )
+
+        # Fallback to 'all' if Facebook has no authentication configured
+        from core.platform.auth import resolve_effective_cookie_file
+        eff_method, eff_file, desc_suffix = resolve_effective_cookie_file(
+            "facebook", auth_method, custom_cookie_file, settings=settings
+        )
+        if eff_method == "custom_file" and eff_file:
+            cpath = Path(eff_file)
+            if cpath.is_file():
+                return PlatformAuthConfig(
+                    auth_method="custom_file",
+                    cookie_file=str(cpath.resolve()),
+                    description=f"Custom Cookie File{desc_suffix}",
+                )
 
         return PlatformAuthConfig.none()
 
@@ -742,3 +764,20 @@ class FacebookAdapter(PlatformAdapter):
             log_callback=log_callback,
             is_cancelled=is_cancelled,
         )
+    def get_comet_client(
+        self,
+        custom_cookie_file: Optional[str] = None,
+        auth_config: Optional[Any] = None,
+    ) -> Any:
+        """
+        Returns an initialized FacebookCometClient configured with the effective cookie file.
+        """
+        from core.platform.facebook_comet import FacebookCometClient
+        eff_cookie = custom_cookie_file
+        if not eff_cookie:
+            if auth_config is None:
+                auth_config = self.get_auth_config()
+            if auth_config and auth_config.cookie_file:
+                eff_cookie = auth_config.cookie_file
+        return FacebookCometClient(cookie_file=eff_cookie)
+

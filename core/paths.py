@@ -688,6 +688,7 @@ def resolve_media_filename(
     )
     fallback_title = f"video_{video_id}" if video_id else "Untitled"
     clean_title = sanitize_filename(title, max_length=safe_title_len, fallback=fallback_title)
+    clean_title = clean_title.replace("#", "").replace("＃", "").strip() or fallback_title
 
     if include_video_id and video_id:
         stem = f"{prefix}{clean_title} [{video_id}]{suffix}"
@@ -705,18 +706,27 @@ def resolve_video_outtmpl(
     include_video_id: bool = False,
     suffix: str = "",
     number_prefix: str = "",
+    custom_title: Optional[str] = None,
 ) -> str:
     """
     Centralized yt-dlp outtmpl pattern generator.
+    When custom_title is provided: uses sanitized custom_title (with all '#' stripped) instead of '%(title)s'.
     When number_prefix is provided: '<target_dir>/<number_prefix>%(title)s...'
     When include_video_id is True: '<target_dir>/%(title)s [%(id)s]<suffix>.%(ext)s'
     When include_video_id is False: '<target_dir>/%(title)s<suffix>.%(ext)s'
     """
     prefix = number_prefix or ""
-    if include_video_id:
-        tmpl = f"{prefix}%(title)s [%(id)s]{suffix}.%(ext)s"
+    if custom_title:
+        safe_custom = sanitize_filename(custom_title, max_length=DEFAULT_SAFE_TITLE_LENGTH, fallback="video")
+        safe_custom = safe_custom.replace("%", "%%").replace("#", "").replace("＃", "").strip()
+        title_tag = safe_custom or "video"
     else:
-        tmpl = f"{prefix}%(title)s{suffix}.%(ext)s"
+        title_tag = "%(title)s"
+
+    if include_video_id:
+        tmpl = f"{prefix}{title_tag} [%(id)s]{suffix}.%(ext)s"
+    else:
+        tmpl = f"{prefix}{title_tag}{suffix}.%(ext)s"
     return str(target_dir / tmpl)
 
 

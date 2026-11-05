@@ -2121,10 +2121,12 @@ class MainWindow(QMainWindow):
         self._set_ui_state("scanning")
         self.status_bar.showMessage(tr("status_scanning"))
 
-        supports_cookies = (adapter.capabilities.supports_browser_cookies or adapter.capabilities.supports_cookie_file) if adapter else (platform_id == "youtube")
-        pfx = f"{platform_id}_" if platform_id != "youtube" else ""
+        supports_cookies = (adapter.capabilities.supports_browser_cookies or adapter.capabilities.supports_cookie_file) if adapter else (platform_id in ("youtube", "youtubemusic"))
+        pfx = f"{platform_id}_" if platform_id not in ("youtube", "youtubemusic") else ""
         browser_cookies = self.settings_manager.get(f"{pfx}browser_cookies", "none") if supports_cookies else "none"
         custom_cookie_file = self.settings_manager.get(f"{pfx}custom_cookie_file", "") if supports_cookies else ""
+        if not custom_cookie_file and supports_cookies and self.settings_manager.get("all_auth_method", "none") == "custom_file":
+            custom_cookie_file = self.settings_manager.get("all_custom_cookie_file", "")
         auth_config = adapter.get_auth_config(self.settings_manager) if adapter else None
 
         self._scan_worker = ChannelScanWorker(
@@ -2420,6 +2422,10 @@ class MainWindow(QMainWindow):
             instagram_custom_cookie_file=self.settings_manager.get("instagram_custom_cookie_file", ""),
             x_auth_method=self.settings_manager.get("x_auth_method", "none"),
             x_custom_cookie_file=self.settings_manager.get("x_custom_cookie_file", ""),
+            tiktok_auth_method=self.settings_manager.get("tiktok_auth_method", "none"),
+            tiktok_custom_cookie_file=self.settings_manager.get("tiktok_custom_cookie_file", ""),
+            all_auth_method=self.settings_manager.get("all_auth_method", "none"),
+            all_custom_cookie_file=self.settings_manager.get("all_custom_cookie_file", ""),
         )
 
     def _on_download_clicked(self) -> None:
@@ -2478,7 +2484,7 @@ class MainWindow(QMainWindow):
             return
 
         adapter = PlatformRegistry.get_adapter(platform_id)
-        supports_cookies = (adapter.capabilities.supports_browser_cookies or adapter.capabilities.supports_cookie_file) if adapter else (platform_id == "youtube")
+        supports_cookies = (adapter.capabilities.supports_browser_cookies or adapter.capabilities.supports_cookie_file) if adapter else (platform_id in ("youtube", "youtubemusic"))
         if platform_id == "douyin":
             active_cookies = self.settings_manager.get("douyin_browser_cookies", "none") if supports_cookies else "none"
             active_file = self.settings_manager.get("douyin_custom_cookie_file", "") if supports_cookies else ""
@@ -2494,12 +2500,19 @@ class MainWindow(QMainWindow):
         elif platform_id == "bilibili":
             active_cookies = "none"
             active_file = self.settings_manager.get("bilibili_custom_cookie_file", "") if supports_cookies else ""
-        elif platform_id == "youtube":
+        elif platform_id == "tiktok":
+            active_cookies = "none"
+            active_file = self.settings_manager.get("tiktok_custom_cookie_file", "") if supports_cookies else ""
+        elif platform_id in ("youtube", "youtubemusic"):
             active_cookies = self.settings_manager.get("browser_cookies", "none") if supports_cookies else "none"
             active_file = self.settings_manager.get("custom_cookie_file", "") if supports_cookies else ""
         else:
             active_cookies = "none"
             active_file = ""
+
+        # Global 'all' cookie file fallback
+        if not active_file and supports_cookies and self.settings_manager.get("all_auth_method", "none") == "custom_file":
+            active_file = self.settings_manager.get("all_custom_cookie_file", "")
 
         settings = DownloadSettings(
             download_mode=mode_val,
@@ -2556,6 +2569,10 @@ class MainWindow(QMainWindow):
             instagram_custom_cookie_file=self.settings_manager.get("instagram_custom_cookie_file", ""),
             x_auth_method=self.settings_manager.get("x_auth_method", "none"),
             x_custom_cookie_file=self.settings_manager.get("x_custom_cookie_file", ""),
+            tiktok_auth_method=self.settings_manager.get("tiktok_auth_method", "none"),
+            tiktok_custom_cookie_file=self.settings_manager.get("tiktok_custom_cookie_file", ""),
+            all_auth_method=self.settings_manager.get("all_auth_method", "none"),
+            all_custom_cookie_file=self.settings_manager.get("all_custom_cookie_file", ""),
         )
 
         # Check FFmpeg requirement warning

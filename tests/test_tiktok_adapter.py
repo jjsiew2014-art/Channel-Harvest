@@ -36,7 +36,7 @@ class TestTikTokAdapter(unittest.TestCase):
         self.assertTrue(caps.supports_playlists)
         self.assertTrue(caps.supports_channel_scan)
         self.assertFalse(caps.supports_browser_cookies)
-        self.assertFalse(caps.supports_cookie_file)
+        self.assertTrue(caps.supports_cookie_file)
         self.assertEqual(caps.archive_prefix, "tiktok")
 
     def test_matches_url(self):

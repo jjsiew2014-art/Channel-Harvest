@@ -50,6 +50,18 @@ class AuthResultDialog(QDialog):
         plat = getattr(self.result, "platform", "youtube")
         if plat == "douyin":
             title = tr("auth_dialog_douyin_title") if tr("auth_dialog_douyin_title") != "auth_dialog_douyin_title" else "Douyin Authentication Diagnostics"
+        elif plat == "facebook":
+            title = tr("auth_dialog_facebook_title") if tr("auth_dialog_facebook_title") != "auth_dialog_facebook_title" else "Facebook Authentication Diagnostics"
+        elif plat == "instagram":
+            title = tr("auth_dialog_instagram_title") if tr("auth_dialog_instagram_title") != "auth_dialog_instagram_title" else "Instagram Authentication Diagnostics"
+        elif plat in ("x", "twitter"):
+            title = tr("auth_dialog_x_title") if tr("auth_dialog_x_title") != "auth_dialog_x_title" else "X (Twitter) Authentication Diagnostics"
+        elif plat == "bilibili":
+            title = tr("auth_dialog_bilibili_title") if tr("auth_dialog_bilibili_title") != "auth_dialog_bilibili_title" else "Bilibili Authentication Diagnostics"
+        elif plat == "tiktok":
+            title = tr("auth_dialog_tiktok_title") if tr("auth_dialog_tiktok_title") != "auth_dialog_tiktok_title" else "TikTok Authentication Diagnostics"
+        elif plat == "all":
+            title = tr("auth_dialog_all_title") if tr("auth_dialog_all_title") != "auth_dialog_all_title" else "All Platforms Authentication Diagnostics"
         else:
             title = tr("auth_dialog_title") if tr("auth_dialog_title") != "auth_dialog_title" else "YouTube Authentication Diagnostics"
         self.setWindowTitle(title)

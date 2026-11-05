@@ -75,6 +75,8 @@ class ProfileScanManager:
         from core.platform import PlatformRegistry
         adapter = PlatformRegistry.get_adapter(platform)
 
+        is_mock_adapter = bool(adapter and hasattr(adapter, "scan") and hasattr(adapter.scan, "mock"))
+
         if auth_config is None and adapter:
             from core.settings import SettingsManager
             try:
@@ -122,6 +124,7 @@ class ProfileScanManager:
         discovered_video_items: List[VideoItem] = []
         seen_post_ids = set()
         seen_media_ids = set()
+        seen_urls = set()
         media_id_to_index: Dict[str, int] = {}
 
         gallery_attempted = False
@@ -138,12 +141,21 @@ class ProfileScanManager:
         # =========================================================================
         # TASK 1: gallery-dl Image Discovery (Photos, Albums, Carousels)
         # =========================================================================
-        can_use_gallerydl = self.gallerydl.is_available()
+        is_fb_video_tab = platform == "facebook" and any(k in url.lower() for k in ("/reels", "/reel", "/videos"))
+        is_fb_photo_tab = platform == "facebook" and any(k in url.lower() for k in ("/photos", "/photos_by", "/photos_albums"))
+        is_ig_reels_tab = platform == "instagram" and any(k in url.lower() for k in ("/reels", "/reel"))
+        is_video_only_tab = is_fb_video_tab or is_ig_reels_tab
+        can_use_gallerydl = self.gallerydl.is_available() and not is_video_only_tab
+        if is_fb_video_tab and log_callback:
+            log_callback("[SCAN] Facebook Reels/Videos tab detected; skipping gallery-dl photo scan and focusing on video discovery.")
+        elif is_ig_reels_tab and log_callback:
+            log_callback("[SCAN] Instagram Reels tab detected; skipping gallery-dl photo scan and focusing on video discovery.")
         if can_use_gallerydl and not (is_cancelled and is_cancelled()):
             gallery_attempted = True
             try:
+                task_label = "Task 1/1" if is_fb_photo_tab else "Task 1/2"
                 if log_callback:
-                    log_callback(f"[SCAN] Task 1/2: Discovering photos with gallery-dl (v{self.gallerydl.get_version()})...")
+                    log_callback(f"[SCAN] {task_label}: Discovering photos with gallery-dl (v{self.gallerydl.get_version()})...")
 
                 raw_records = self.gallerydl.extract_metadata(
                     url=url,
@@ -204,6 +216,10 @@ class ProfileScanManager:
                         if m_id in seen_media_ids:
                             continue
                         seen_media_ids.add(m_id)
+                        if m_url:
+                            seen_urls.add(m_url)
+                        if child.get("media_id"):
+                            seen_media_ids.add(str(child.get("media_id")))
 
                         route_decision = self.router.route_media_item(
                             item=child, platform=platform, auth_config=auth_config
@@ -231,7 +247,18 @@ class ProfileScanManager:
                         discovered_media_items.append(item_rec)
 
                         raw_title = parent_meta.get("caption") or f"{platform.capitalize()} {m_type} {m_id}"
-                        first_line_title = raw_title.splitlines()[0][:100].strip() if raw_title else f"{platform.capitalize()} {m_id}"
+                        if platform == "facebook":
+                            from core.platform.facebook_comet import format_caption_title
+                            fb_clean_id = m_id.replace("fb_photo_", "").replace("fb_reel_", "").replace("fb_video_", "")
+                            fallback_name = "Photo" if m_type == MediaInventoryType.IMAGE else ("Reel" if m_type == MediaInventoryType.REEL else "Video")
+                            first_line_title = format_caption_title(raw_title, fallback=f"Facebook {fallback_name} {fb_clean_id}", max_chars=35)
+                        elif platform == "instagram":
+                            from core.platform.instagram_web import format_instagram_caption_title
+                            ig_clean_id = m_id.replace("ig_photo_", "").replace("ig_reel_", "").replace("ig_video_", "")
+                            fallback_name = "Photo" if m_type == MediaInventoryType.IMAGE else ("Reel" if m_type == MediaInventoryType.REEL else "Video")
+                            first_line_title = format_instagram_caption_title(raw_title, fallback=f"Instagram {fallback_name} {ig_clean_id}", max_chars=35)
+                        else:
+                            first_line_title = raw_title.splitlines()[0][:100].strip() if raw_title else f"{platform.capitalize()} {m_id}"
 
                         dur_sec = int(child.get("duration")) if (child.get("duration") and isinstance(child.get("duration"), (int, float)) and child.get("duration") > 0) else None
                         ui_media_type = MediaType.PHOTO if m_type == MediaInventoryType.IMAGE else (MediaType.REEL if m_type == MediaInventoryType.REEL else MediaType.VIDEO)
@@ -287,6 +314,261 @@ class ProfileScanManager:
                 if log_callback:
                     log_callback("[INFO] gallery-dl is not available; photo discovery skipped, falling back to video-only discovery.")
 
+        # Facebook Comet Photo Discovery & Inventory Enrichment:
+        # For Facebook profiles, modern collections require Comet GraphQL to paginate through all photos.
+        # Queries the photos collection with complete enumeration (max_count=None) and merges any photos
+        # that gallery-dl missed into inventory.
+        if platform == "facebook" and not is_fb_video_tab and not scan_interrupted and not (is_cancelled and is_cancelled()):
+            try:
+                from core.platform.facebook_comet import FacebookCometClient, format_caption_title
+                valid_cookie = custom_cookie_file if (custom_cookie_file and Path(custom_cookie_file).is_file()) else None
+                comet_client = FacebookCometClient(cookie_file=valid_cookie)
+                tokens = comet_client.extract_page_tokens(url, is_cancelled=is_cancelled, log_callback=log_callback)
+                photos_id = tokens.get("photos_by_id") or tokens.get("page_id")
+                if photos_id and tokens.get("lsd"):
+                    if log_callback:
+                        log_callback("[SCAN] Querying Facebook Comet photo collection for complete enumeration...")
+                    comet_photos = comet_client.scan_photos(
+                        photos_id=photos_id,
+                        lsd=tokens["lsd"],
+                        dtsg=tokens.get("dtsg", ""),
+                        profile_url=url,
+                        max_count=None,
+                        is_cancelled=is_cancelled,
+                        progress_callback=lambda c, msg: progress_callback(len(discovered_posts), len(discovered_media_items) + c, msg) if progress_callback else None,
+                        log_callback=log_callback,
+                    )
+                    if comet_photos:
+                        merged_count = 0
+                        for idx, p in enumerate(comet_photos, start=1):
+                            if is_cancelled and is_cancelled():
+                                scan_interrupted = True
+                                break
+                            p_id = p["id"]
+                            direct_url = p.get("direct_url")
+                            m_id = f"fb_photo_{p_id}"
+                            if (
+                                m_id in seen_media_ids
+                                or p_id in seen_media_ids
+                                or (direct_url and direct_url in seen_urls)
+                            ):
+                                # If an item was previously recorded with a generic fallback title, upgrade to Comet's authentic title
+                                existing_idx = media_id_to_index.get(m_id) or media_id_to_index.get(p_id)
+                                if existing_idx is not None and 0 < existing_idx <= len(discovered_video_items):
+                                    existing_item = discovered_video_items[existing_idx - 1]
+                                    if (
+                                        existing_item.title.startswith("Facebook ")
+                                        and p.get("title")
+                                        and not p["title"].startswith(f"Facebook Photo {p_id}")
+                                    ):
+                                        formatted_photo_title = format_caption_title(p.get("title"), fallback=f"Facebook Photo {p_id}", max_chars=35)
+                                        existing_item.title = formatted_photo_title
+                                continue
+
+                            seen_media_ids.add(m_id)
+                            seen_media_ids.add(p_id)
+                            if direct_url:
+                                seen_urls.add(direct_url)
+                            merged_count += 1
+
+                            parent_id = f"fb_photo_post_{p_id}"
+                            raw_caption = p.get("caption") or p.get("title")
+                            formatted_photo_title = format_caption_title(p.get("title") or raw_caption, fallback=f"Facebook Photo {p_id}", max_chars=35)
+                            post_rec = PostRecord(
+                                platform="facebook",
+                                post_id=parent_id,
+                                profile_id=photos_id,
+                                profile_url=url,
+                                original_url=p.get("post_url"),
+                                canonical_url=p.get("post_url"),
+                                caption=raw_caption or formatted_photo_title,
+                                discovery_source="facebook-comet",
+                                discovery_timestamp=start_time_iso,
+                            )
+                            self.inventory.upsert_post(post_rec)
+                            if parent_id not in seen_post_ids:
+                                seen_post_ids.add(parent_id)
+                                discovered_posts.append(post_rec)
+
+                            item_rec = MediaItemRecord(
+                                media_id=m_id,
+                                platform="facebook",
+                                parent_post_id=parent_id,
+                                media_url=direct_url,
+                                media_type=MediaInventoryType.IMAGE,
+                                media_sequence_index=1,
+                                discovery_source="facebook-comet",
+                                preferred_engine=EngineType.GALLERY_DL,
+                                selected_engine=EngineType.GALLERY_DL,
+                                download_status="PENDING",
+                            )
+                            self.inventory.upsert_media_item(item_rec)
+                            discovered_media_items.append(item_rec)
+
+                            v_item = VideoItem(
+                                index=len(discovered_video_items) + 1,
+                                video_id=m_id,
+                                title=formatted_photo_title,
+                                duration="-",
+                                duration_seconds=None,
+                                status=VideoStatus.READY,
+                                url=direct_url,
+                                channel_title=post_rec.author or "Facebook",
+                                platform="facebook",
+                                media_type=MediaType.PHOTO,
+                                extra_metadata={
+                                    "media_id": m_id,
+                                    "parent_post_id": parent_id,
+                                    "media_type": MediaInventoryType.IMAGE,
+                                    "engine": EngineType.GALLERY_DL,
+                                    "post_url": p.get("post_url"),
+                                    "caption": raw_caption or formatted_photo_title,
+                                },
+                            )
+                            media_id_to_index[m_id] = len(discovered_video_items)
+                            discovered_video_items.append(v_item)
+
+                        if merged_count > 0:
+                            if log_callback:
+                                log_callback(f"[SCAN] Facebook Comet merged {merged_count} photo(s) into inventory (total photos: {len(discovered_media_items)}).")
+                            gallery_success = True
+            except Exception as e:
+                _logger.debug("Facebook Comet photo discovery notice: %s", e)
+
+        # Instagram Web Photo Discovery & Inventory Enrichment:
+        # Paginates Instagram timeline posts via Polaris GraphQL/REST to discover all photos & carousels
+        # and merges any items missed by gallery-dl into inventory.
+        ig_scanned_video_records: List[Dict[str, Any]] = []
+        if platform == "instagram" and not is_ig_reels_tab and not scan_interrupted and not (is_cancelled and is_cancelled()):
+            try:
+                from core.platform.instagram_web import InstagramWebClient, format_instagram_caption_title
+                valid_cookie = custom_cookie_file if (custom_cookie_file and Path(custom_cookie_file).is_file()) else None
+                ig_client = InstagramWebClient(cookie_file=valid_cookie)
+                ig_info = ig_client.extract_profile_info(url, is_cancelled=is_cancelled, log_callback=log_callback)
+                ig_username = ig_info.get("username")
+                if ig_username:
+                    if log_callback:
+                        log_callback(f"[SCAN] Querying Instagram Web feed for complete photo enumeration (@{ig_username})...")
+                    ig_items = ig_client.scan_posts(
+                        username=ig_username,
+                        user_id=ig_info.get("user_id"),
+                        lsd=ig_info.get("lsd", ""),
+                        dtsg=ig_info.get("dtsg", ""),
+                        profile_url=url,
+                        max_count=None,
+                        is_cancelled=is_cancelled,
+                        progress_callback=lambda c, msg: progress_callback(len(discovered_posts), len(discovered_media_items) + c, msg) if progress_callback else None,
+                        log_callback=log_callback,
+                    )
+                    if ig_items:
+                        merged_count = 0
+                        for idx, item in enumerate(ig_items, start=1):
+                            if is_cancelled and is_cancelled():
+                                scan_interrupted = True
+                                break
+
+                            item_type = item.get("type", "photo")
+                            if item_type != "photo":
+                                ig_scanned_video_records.append(item)
+                                continue
+
+                            item_id = str(item["id"])
+                            direct_url = item.get("direct_url")
+                            m_id = f"ig_photo_{item_id}"
+                            if (
+                                m_id in seen_media_ids
+                                or item_id in seen_media_ids
+                                or (direct_url and direct_url in seen_urls)
+                            ):
+                                existing_idx = media_id_to_index.get(m_id) or media_id_to_index.get(item_id)
+                                if existing_idx is not None and 0 < existing_idx <= len(discovered_video_items):
+                                    existing_item = discovered_video_items[existing_idx - 1]
+                                    if (
+                                        existing_item.title.startswith("Instagram ")
+                                        and item.get("title")
+                                        and not item["title"].startswith(f"Instagram Photo {item_id}")
+                                    ):
+                                        existing_item.title = item["title"]
+                                continue
+
+                            seen_media_ids.add(m_id)
+                            seen_media_ids.add(item_id)
+                            if direct_url:
+                                seen_urls.add(direct_url)
+                            merged_count += 1
+
+                            parent_id = f"ig_post_{item.get('parent_post_id') or item_id}"
+                            raw_caption = item.get("caption") or ""
+                            formatted_photo_title = item.get("title") or format_instagram_caption_title(
+                                raw_caption, fallback=f"Instagram Photo {item_id}", max_chars=35
+                            )
+
+                            post_rec = PostRecord(
+                                platform="instagram",
+                                post_id=parent_id,
+                                profile_id=ig_info.get("user_id") or ig_username,
+                                profile_url=url,
+                                original_url=item.get("post_url"),
+                                canonical_url=item.get("post_url"),
+                                caption=raw_caption or formatted_photo_title,
+                                author=item.get("author") or ig_username,
+                                discovery_source="instagram-web",
+                                discovery_timestamp=start_time_iso,
+                            )
+                            self.inventory.upsert_post(post_rec)
+                            if parent_id not in seen_post_ids:
+                                seen_post_ids.add(parent_id)
+                                discovered_posts.append(post_rec)
+
+                            item_rec = MediaItemRecord(
+                                media_id=m_id,
+                                platform="instagram",
+                                parent_post_id=parent_id,
+                                media_url=direct_url,
+                                media_type=MediaInventoryType.IMAGE,
+                                media_sequence_index=item.get("sequence_index", 1),
+                                media_count=item.get("media_count", 1),
+                                discovery_source="instagram-web",
+                                preferred_engine=EngineType.GALLERY_DL,
+                                selected_engine=EngineType.GALLERY_DL,
+                                download_status="PENDING",
+                            )
+                            self.inventory.upsert_media_item(item_rec)
+                            discovered_media_items.append(item_rec)
+
+                            v_item = VideoItem(
+                                index=len(discovered_video_items) + 1,
+                                video_id=m_id,
+                                title=formatted_photo_title,
+                                duration="-",
+                                duration_seconds=None,
+                                status=VideoStatus.READY,
+                                url=direct_url,
+                                channel_title=item.get("author") or ig_username,
+                                platform="instagram",
+                                media_type=MediaType.PHOTO,
+                                extra_metadata={
+                                    "media_id": m_id,
+                                    "parent_post_id": parent_id,
+                                    "media_type": MediaInventoryType.IMAGE,
+                                    "engine": EngineType.GALLERY_DL,
+                                    "post_url": item.get("post_url"),
+                                    "caption": raw_caption or formatted_photo_title,
+                                    "author": item.get("author") or ig_username,
+                                    "media_sequence_index": item.get("sequence_index", 1),
+                                    "media_count": item.get("media_count", 1),
+                                },
+                            )
+                            media_id_to_index[m_id] = len(discovered_video_items)
+                            discovered_video_items.append(v_item)
+
+                        if merged_count > 0:
+                            if log_callback:
+                                log_callback(f"[SCAN] Instagram Web merged {merged_count} photo(s) into inventory (total photos: {len(discovered_media_items)}).")
+                            gallery_success = True
+            except Exception as e:
+                _logger.debug("Instagram Web photo discovery notice: %s", e)
+
         # =========================================================================
         # TASK 2: Independent Profile Video Discovery & yt-dlp Metadata Extraction
         # =========================================================================
@@ -296,11 +578,15 @@ class ProfileScanManager:
         video_error: Optional[str] = None
         discovered_candidates_count = 0
 
-        if not scan_interrupted and not (is_cancelled and is_cancelled()):
+        if is_fb_photo_tab:
+            if log_callback:
+                log_callback("[SCAN] Facebook Photos tab detected; skipping video/reels discovery and focusing on photo discovery.")
+        elif not scan_interrupted and not (is_cancelled and is_cancelled()):
             video_attempted = True
+            task_label = "Task 1/1" if is_video_only_tab else "Task 2/2"
             try:
                 if log_callback:
-                    log_callback(f"[SCAN] Task 2/2: Discovering videos & Reels with ProfileVideoDiscoveryEngine...")
+                    log_callback(f"[SCAN] {task_label}: Discovering videos & Reels with ProfileVideoDiscoveryEngine...")
 
                 if self.video_engine.supports_platform(platform):
                     v_res = self.video_engine.discover(
@@ -311,6 +597,7 @@ class ProfileScanManager:
                         cancel_token=is_cancelled,
                         progress_callback=lambda count, msg: progress_callback(len(discovered_posts), len(discovered_media_items) + count, msg) if progress_callback else None,
                         log_callback=log_callback,
+                        raw_records=ig_scanned_video_records if ig_scanned_video_records else None,
                     )
                     discovered_candidates_count = len(v_res.candidates)
                     video_timed_out = v_res.diagnostics.get("timed_out", False)
@@ -456,10 +743,16 @@ class ProfileScanManager:
         if scan_interrupted or (is_cancelled and is_cancelled()):
             scan_status = ScanCompleteness.INTERRUPTED
             completeness_info = f"Scan interrupted by user. Preserved {total_discovered} discovered items ({photo_count} photos, {video_count} videos)."
-        elif (gallery_timed_out or video_timed_out) and total_discovered > 0:
+        elif not is_fb_photo_tab and not is_fb_video_tab and (gallery_timed_out or video_timed_out) and total_discovered > 0:
             scan_status = ScanCompleteness.PARTIAL
             timeout_actor = "gallery-dl and video discovery" if (gallery_timed_out and video_timed_out) else ("gallery-dl" if gallery_timed_out else "video discovery")
             completeness_info = f"Partial scan: {timeout_actor} reached timeout limit, preserved {total_discovered} discovered items ({photo_count} photos, {video_count} videos)."
+        elif is_fb_photo_tab and gallery_success:
+            scan_status = ScanCompleteness.COMPLETE
+            completeness_info = f"Photo enumeration completed successfully ({photo_count} photos)."
+        elif is_fb_video_tab and video_success:
+            scan_status = ScanCompleteness.COMPLETE
+            completeness_info = f"Video and Reel enumeration completed successfully ({video_count} videos/Reels)."
         elif gallery_success and video_success:
             scan_status = ScanCompleteness.COMPLETE
             completeness_info = f"Dual-engine enumeration completed successfully ({photo_count} photos, {video_count} videos/Reels)."

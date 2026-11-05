@@ -28,27 +28,24 @@ def clean_instagram_title(raw_title: str, caption: str = "", fallback: str = "")
     Produces a clean, human-readable title for an Instagram media item.
     Prefers authentic caption text if available, stripping leading/trailing whitespace
     and bounded to a readable first line or sentence. Falls back to raw_title or fallback.
+    Strips '#' and '＃' characters and truncates to 35 characters with '...' if long.
     """
+    from core.platform.instagram_web import format_instagram_caption_title
+
+    candidate_text = ""
     if caption and isinstance(caption, str) and caption.strip():
-        # Clean caption: take the first non-empty line
         lines = [ln.strip() for ln in caption.splitlines() if ln.strip()]
         if lines:
-            first_line = lines[0]
-            # Strip outer quotes or hashtags if it's purely tags
-            if len(first_line) > 120:
-                first_line = first_line[:120].rsplit(' ', 1)[0]
-            return first_line
+            candidate_text = lines[0]
 
-    if raw_title and isinstance(raw_title, str) and raw_title.strip():
+    if not candidate_text and raw_title and isinstance(raw_title, str) and raw_title.strip():
         lines = [ln.strip() for ln in raw_title.splitlines() if ln.strip()]
         if lines:
-            candidate = lines[0]
-            # If candidate is a generic yt-dlp placeholder like "Video by ..." or "Post by ...", prefer fallback
-            if candidate.lower().startswith(("video by ", "post by ")) and fallback:
-                return fallback
-            return candidate
+            cand = lines[0]
+            if not cand.lower().startswith(("video by ", "post by ")):
+                candidate_text = cand
 
-    return fallback
+    return format_instagram_caption_title(candidate_text, fallback=fallback, max_chars=35)
 
 
 class InstagramAdapter(PlatformAdapter):
@@ -273,6 +270,7 @@ class InstagramAdapter(PlatformAdapter):
         1. None (auth_method == 'none')
         2. Custom Cookie File (auth_method == 'custom_file' with valid cookie_file path)
         """
+        from pathlib import Path
         auth_method = "none"
         custom_cookie_file = ""
 
@@ -312,6 +310,20 @@ class InstagramAdapter(PlatformAdapter):
                 cookie_file=str(cpath.resolve()),
                 description="Custom Cookie File",
             )
+
+        # Fallback to 'all' if Instagram has no authentication configured
+        from core.platform.auth import resolve_effective_cookie_file
+        eff_method, eff_file, desc_suffix = resolve_effective_cookie_file(
+            "instagram", auth_method, custom_cookie_file, settings=settings
+        )
+        if eff_method == "custom_file" and eff_file:
+            cpath = Path(eff_file)
+            if cpath.is_file():
+                return PlatformAuthConfig(
+                    auth_method="custom_file",
+                    cookie_file=str(cpath.resolve()),
+                    description=f"Custom Cookie File{desc_suffix}",
+                )
 
         return PlatformAuthConfig.none()
 

@@ -100,6 +100,9 @@ class TestFacebookAdapter(unittest.TestCase):
             "https://fb.me/xyz987",
             "https://www.facebook.com/share/v/123456789/",
             "https://www.facebook.com/share/r/987654321/",
+            "https://www.facebook.com/HongYongMusic/reels/",
+            "https://www.facebook.com/HongYongMusic/reels",
+            "https://www.facebook.com/HongYongMusic/videos/",
         ]
         for u in valid_urls:
             is_valid, reason = self.adapter.validate_url(u)
@@ -207,7 +210,9 @@ class TestFacebookAdapter(unittest.TestCase):
             self.assertEqual(len(items), 1)
             item = items[0]
             self.assertEqual(item.video_id, "123456789012345")
-            self.assertEqual(item.title, reel_title)
+            # All '#' symbols are stripped from title
+            expected_title = "🌟 Amazing Street Food in Tokyo! 🍜 日本の美味しいラーメン travel shorts"
+            self.assertEqual(item.title, expected_title)
             self.assertEqual(item.duration, "00:58")
             self.assertEqual(item.platform, "facebook")
 
@@ -771,6 +776,15 @@ class TestCrossPlatformIsolation(unittest.TestCase):
         # Quoted title
         raw9 = '"9.7K views · 352 reactions | Quoted Title"'
         self.assertEqual(clean_facebook_title(raw9), "Quoted Title")
+
+        # Titles with hashtags: '#' stripped
+        raw10 = "9.7K views · 352 reactions | #谢采妘 #柔情蜜意"
+        self.assertEqual(clean_facebook_title(raw10), "谢采妘 柔情蜜意")
+
+        # Titles with only '#': graceful fallback
+        self.assertEqual(clean_facebook_title("###", fallback="Facebook Video 123"), "Facebook Video 123")
+        self.assertEqual(clean_facebook_title("# # #", fallback="Facebook Video 123"), "Facebook Video 123")
+        self.assertEqual(clean_facebook_title("＃＃＃", fallback="Facebook Video 123"), "Facebook Video 123")
 
         # Stats only without real title -> returns fallback
         raw10 = "9.7K views · 352 reactions"

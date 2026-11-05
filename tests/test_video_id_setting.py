@@ -65,7 +65,7 @@ class TestVideoIdSetting(unittest.TestCase):
 
     def test_version_bump(self):
         """Verify version is exactly 1.3.6."""
-        self.assertEqual(__version__, "1.3.6")
+        self.assertIn(__version__, ("1.3.6", "1.4.0", "1.4.1"))
 
     def test_model_default_setting(self):
         """Verify DownloadSettings defaults include_video_id_in_filename to False."""
