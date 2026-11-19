@@ -592,6 +592,33 @@ class AuthChecker:
             cls._cookie_file_cache[cache_key] = (mtime, size, res.copy())
             return res
 
+        if platform == "rednote":
+            rn_cookies = [c for c in jar if any(d in getattr(c, "domain", "").lower() for d in ("xiaohongshu.com", "rednote.com"))]
+            rn_count = len(rn_cookies)
+            has_rn_session = any(getattr(c, "name", "").lower() in ("a1", "web_session") for c in rn_cookies)
+            if rn_count == 0:
+                res = {
+                    "is_valid": False,
+                    "status_code": AuthStatusCode.COOKIE_FILE_INVALID,
+                    "message": "Cookie file parsed, but contains no RedNote (小红书) cookies.",
+                    "cookie_count": total_cookies,
+                    "youtube_cookie_count": 0,
+                    "has_session": False,
+                }
+                cls._cookie_file_cache[cache_key] = (mtime, size, res.copy())
+                return res
+            session_str = "RedNote session detected" if has_rn_session else "RedNote cookies found"
+            res = {
+                "is_valid": True,
+                "status_code": AuthStatusCode.COOKIE_FILE_VALID,
+                "message": f"✓ Cookie file detected ({rn_count} RedNote cookies, {session_str})",
+                "cookie_count": total_cookies,
+                "youtube_cookie_count": rn_count,
+                "has_session": has_rn_session,
+            }
+            cls._cookie_file_cache[cache_key] = (mtime, size, res.copy())
+            return res
+
         yt_cookies, has_session = cls._inspect_youtube_cookies(jar)
         yt_count = len(yt_cookies)
 
@@ -641,6 +668,7 @@ class AuthChecker:
                 else "Facebook" if platform == "facebook"
                 else "Bilibili" if platform == "bilibili"
                 else "Douyin" if platform == "douyin"
+                else "RedNote" if platform == "rednote"
                 else "YouTube"
             )
             return AuthTestResult(
@@ -1204,6 +1232,44 @@ class AuthChecker:
                 platform="tiktok",
             )
 
+        elif platform == "rednote":
+            rn_cookies = [c for c in jar if any(d in getattr(c, "domain", "").lower() for d in ("xiaohongshu.com", "rednote.com"))]
+            has_session = any(getattr(c, "name", "").lower() in ("a1", "web_session") for c in rn_cookies)
+            if not rn_cookies:
+                return AuthTestResult(
+                    success=False,
+                    stage="RedNote Cookie Verification",
+                    status_code=AuthStatusCode.COOKIE_FILE_INVALID,
+                    browser_name=disp_name,
+                    profile_name="N/A",
+                    cookie_count=total_cookies,
+                    youtube_cookie_count=0,
+                    has_session=False,
+                    reason="The cookie file was parsed, but contains no RedNote (xiaohongshu.com) cookies.",
+                    suggested_action="Make sure you were logged in to xiaohongshu.com when exporting cookies.",
+                    technical_error=f"Parsed {total_cookies} total cookies, 0 for xiaohongshu.com",
+                    platform="rednote",
+                )
+            status = AuthStatusCode.COOKIE_FILE_VALID
+            reason_msg = f"Cookie file successfully loaded. {len(rn_cookies)} RedNote cookies found."
+            if not has_session:
+                reason_msg += " (Notice: Active session cookie 'a1' or 'web_session' not detected; notes may require xsec_token)."
+            action_msg = "RedNote cookie file is active. Channel Harvest will use this cookie file for RedNote downloads."
+            return AuthTestResult(
+                success=True,
+                stage=AuthStage.COMPLETE,
+                status_code=status,
+                browser_name=disp_name,
+                profile_name="N/A",
+                cookie_count=total_cookies,
+                youtube_cookie_count=len(rn_cookies),
+                has_session=has_session,
+                reason=reason_msg,
+                suggested_action=action_msg,
+                technical_error="",
+                platform="rednote",
+            )
+
         elif platform == "all":
             if total_cookies == 0:
                 return AuthTestResult(
@@ -1236,6 +1302,8 @@ class AuthChecker:
                 detected_platforms.append("Bilibili")
             if any("douyin.com" in d for d in domains):
                 detected_platforms.append("Douyin")
+            if any("xiaohongshu.com" in d or "rednote.com" in d for d in domains):
+                detected_platforms.append("RedNote")
 
             plat_summary = ", ".join(detected_platforms) if detected_platforms else "General"
             reason_msg = f"Universal cookie file successfully loaded. Found {total_cookies} cookies (detected for: {plat_summary})."

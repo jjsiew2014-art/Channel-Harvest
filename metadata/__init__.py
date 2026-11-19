@@ -10,6 +10,7 @@ from metadata.bilibili_formatter import BilibiliMetadataFormatter
 from metadata.facebook_formatter import FacebookMetadataFormatter
 from metadata.instagram_formatter import InstagramMetadataFormatter
 from metadata.x_formatter import XMetadataFormatter
+from metadata.rednote_formatter import RedNoteMetadataFormatter
 from metadata.generic_formatter import GenericMetadataFormatter
 from metadata.metadata_exporter import MetadataExporter
 
@@ -21,6 +22,7 @@ __all__ = [
     "FacebookMetadataFormatter",
     "InstagramMetadataFormatter",
     "XMetadataFormatter",
+    "RedNoteMetadataFormatter",
     "GenericMetadataFormatter",
     "MetadataExporter",
 ]

@@ -154,6 +154,35 @@ def ensure_dependencies() -> bool:
             print_error(f"Failed to install Pillow: {install_err}")
             all_ok = False
 
+    def _certifi_is_valid() -> bool:
+        import importlib
+        importlib.invalidate_caches()
+        if "certifi" in sys.modules:
+            del sys.modules["certifi"]
+        mod = importlib.import_module("certifi")
+        where_fn = getattr(mod, "where", None)
+        return callable(where_fn) and Path(where_fn()).is_file()
+
+    try:
+        if not _certifi_is_valid():
+            raise ImportError("certifi missing callable where() or cacert.pem")
+        import certifi
+        print_success(f"certifi bundle: {certifi.where()}")
+    except Exception as e:
+        print_error(f"Invalid or missing dependency certifi ({e}). Installing certifi...")
+        try:
+            subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--force-reinstall", "certifi>=2024.0.0"],
+                check=True,
+            )
+            if not _certifi_is_valid():
+                raise RuntimeError("certifi remains invalid after reinstall")
+            import certifi
+            print_success(f"certifi installed: {certifi.where()}")
+        except Exception as install_err:
+            print_error(f"Failed to verify/install certifi: {install_err}")
+            all_ok = False
+
     return all_ok
 
 
@@ -328,6 +357,29 @@ def clean_build_artifacts() -> None:
             print(f"[CLEAN] Removed {folder}")
 
 
+def verify_frozen_certifi(output_exe: Path) -> bool:
+    """Verifies that the PyInstaller build contains both `certifi` bytecode and `cacert.pem`."""
+    pem_path = output_exe.parent / "_internal" / "certifi" / "cacert.pem"
+    if not pem_path.is_file():
+        print_error(f"Frozen bundle is missing CA certificates: {pem_path}")
+        return False
+
+    try:
+        from PyInstaller.archive.readers import CArchiveReader
+        reader = CArchiveReader(str(output_exe))
+        pyz = reader.open_embedded_archive("PYZ.pyz")
+        missing = [mod for mod in ("certifi", "certifi.core") if mod not in pyz.toc]
+        if missing:
+            print_error(f"Embedded PYZ.pyz is missing required modules: {', '.join(missing)}")
+            return False
+    except Exception as e:
+        print_error(f"Failed to inspect embedded PYZ archive for certifi: {e}")
+        return False
+
+    print_success(f"Verified frozen certifi modules and CA bundle: {pem_path}")
+    return True
+
+
 def build_pyinstaller() -> bool:
     """Runs PyInstaller using ChannelHarvest.spec."""
     print_step("Building Channel Harvest with PyInstaller (onedir mode)")
@@ -354,6 +406,9 @@ def build_pyinstaller() -> bool:
     output_exe = PROJECT_ROOT / "dist" / "ChannelHarvest" / "ChannelHarvest.exe"
     if not output_exe.is_file():
         print_error(f"PyInstaller output executable not found: {output_exe}")
+        return False
+
+    if not verify_frozen_certifi(output_exe):
         return False
 
     print_success(f"PyInstaller compilation complete: {output_exe}")

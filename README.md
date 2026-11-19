@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>YouTube, YouTube Music, TikTok, Bilibili, Facebook, Instagram & X (Twitter) media and creator downloader</strong><br/>
+  <strong>YouTube, YouTube Music, TikTok, Bilibili, Facebook, Instagram, X (Twitter) & RedNote (Xiaohongshu) media and creator downloader</strong><br/>
   Harvest channels, creator profiles, spaces, pages, and accounts. Keep every media item — with full video, photo, audio, subtitle, cover art, synchronized lyrics, and metadata archival.<br/>
   Built with Python, PySide6 (Qt for Python), yt-dlp, gallery-dl, Deno, and FFmpeg.
 </p>
@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img alt="Version" src="https://img.shields.io/badge/version-1.4.1-6C63FF?style=flat-square"/>
+  <img alt="Version" src="https://img.shields.io/badge/version-1.4.2-6C63FF?style=flat-square"/>
   <img alt="Platform" src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-blue?style=flat-square"/>
   <img alt="License" src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square"/>
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-F59E0B?style=flat-square"/>
@@ -25,7 +25,7 @@
 
 ## 🌟 Key Features
 
-### 🌐 Multi-Platform Support (YouTube, YouTube Music, TikTok, Bilibili, Facebook, Instagram & X)
+### 🌐 Multi-Platform Support (YouTube, YouTube Music, TikTok, Bilibili, Facebook, Instagram, X & RedNote)
 Easily switch between platforms directly from the top navigation bar with adaptive URL placeholder cues:
 * **YouTube Video, Shorts, Playlist & Channel Archival**:
   * Full support for single videos, Shorts, playlists, and entire channel archives (`/channel/`, `/@handle`, `/c/`).
@@ -49,6 +49,12 @@ Easily switch between platforms directly from the top navigation bar with adapti
   * Intelligent multi-video tweet extraction: unpacks and enumerates individual video streams (`/video/1`, `/video/2`) with parent post caption and metadata preservation.
   * Adaptive title cleaning (`clean_x_title`): strips redundant `User on X: "..."` wrappers, removes trailing `t.co` media links, and enforces safe filename length limits while preserving Unicode characters, CJK scripts, and emojis.
   * Dedicated Netscape `cookies.txt` authentication support (`auth_token`, `ct0`, `twid`) with session validation and sensitive credential scrubbing for protected accounts and login-gated content.
+* **RedNote (Xiaohongshu / 小红书) Note, Profile & Collection Archival**:
+  * Native platform integration with top navigation switcher and automated URL detection (`xiaohongshu.com`, `rednote.com`, `xhslink.com`).
+  * **Full Photo & Video Note Extraction**: Downloads full-resolution uncompressed image carousels (with companion Live Photo video stream pairing) and pristine video notes directly from high-speed origin CDNs.
+  * **Creator Profile Waterfall Scanning**: Automatically extracts public creator notes with universal `[YYYY-MM-DD]` date prefix enrichment and comprehensive metadata parsing.
+  * **Series / Collections & Columns Batch Scanning**: Enumerate and download creator tutorial series, study columns, and note boards (`/collection/`, `/column/`, `/board/`, `/series/`).
+  * **Dedicated Platform Metadata & Cookie Auth**: Generates structured `.metadata.txt` capturing engagement stats, tags, IP location, and creator attribution. Supports Netscape `cookies.txt` or browser session cookies.
 * **TikTok Video & Creator Archival**:
   * High-speed batch scanning and watermark-free video downloads for video links (`/video/...`, `vt.tiktok.com`, `vm.tiktok.com`) and creator profiles (`/@username`).
 * **Bilibili Video, Multi-Part & Space Archival (哔哩哔哩)**:
@@ -56,6 +62,7 @@ Easily switch between platforms directly from the top navigation bar with adapti
 
 ### 🎛️ Flexible Download & Archival Modes
 * **Video + Audio**: High-definition video with merged audio streams (MP4, MOV, MKV) and companion image preservation.
+* **Video + Image**: Combined download mode for platforms with mixed video and photo content (Facebook, Instagram, X, RedNote), downloading high-definition videos alongside full photo sets with intelligent mutual interlocking and dynamic graying-out states when no photos are present.
 * **Video Only**: Standalone video stream downloads.
 * **Audio Only**: Pristine standalone audio extraction (WAV, MP3, M4A, FLAC, AAC, OPUS) with customizable bitrates.
 * **Image Only**: Dedicated image and photo-set archival with customizable format conversion (Keep Original, JPG, PNG, WEBP) and quality settings (70% - 100%).
@@ -93,8 +100,8 @@ Visit the [GitHub Releases](https://github.com/jjsiew2014-art/ChannelHarvest/rel
 
 | Package | File | Description |
 | :--- | :--- | :--- |
-| **Windows Installer** (Recommended) | `ChannelHarvest-Setup-v1.4.1.exe` | Standard setup wizard (Inno Setup) with desktop shortcuts and uninstaller |
-| **Standalone Portable ZIP** | `ChannelHarvest-Portable-v1.4.1.zip` | Zero installation — extract anywhere and run `ChannelHarvest.exe` |
+| **Windows Installer** (Recommended) | `ChannelHarvest-Setup-v1.4.2.exe` | Standard setup wizard (Inno Setup) with desktop shortcuts and uninstaller |
+| **Standalone Portable ZIP** | `ChannelHarvest-Portable-v1.4.2.zip` | Zero installation — extract anywhere and run `ChannelHarvest.exe` |
 
 Both packages are fully self-contained with bundled `runtime/` binaries (`ffmpeg.exe`, `ffprobe.exe`, `deno.exe`, `yt-dlp.exe`).
 
@@ -111,8 +118,8 @@ Because Channel Harvest is an open-source tool and not signed with an expensive 
 You can verify the SHA-256 integrity hash of your downloaded file against `SHA256SUMS.txt` published on the GitHub Releases page:
 
 ```powershell
-Get-FileHash ChannelHarvest-Setup-v1.4.1.exe -Algorithm SHA256
-Get-FileHash ChannelHarvest-Portable-v1.4.1.zip -Algorithm SHA256
+Get-FileHash ChannelHarvest-Setup-v1.4.2.exe -Algorithm SHA256
+Get-FileHash ChannelHarvest-Portable-v1.4.2.zip -Algorithm SHA256
 ```
 
 ---
@@ -250,8 +257,8 @@ The script will automatically:
 2. Generate multi-resolution icons and PE metadata.
 3. Clean and freeze the application using PyInstaller.
 4. Deploy the `runtime/` folder into `dist/ChannelHarvest/`.
-5. Package `release/ChannelHarvest-Portable-v1.4.1.zip`.
-6. Compile `release/ChannelHarvest-Setup-v1.4.1.exe` using Inno Setup.
+5. Package `release/ChannelHarvest-Portable-v1.4.2.zip`.
+6. Compile `release/ChannelHarvest-Setup-v1.4.2.exe` using Inno Setup.
 7. Generate cryptographic SHA-256 hashes in `release/SHA256SUMS.txt`.
 
 ---

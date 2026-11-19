@@ -213,6 +213,7 @@ class TestMainWindowAudioComboInteraction(unittest.TestCase):
                 DownloadMode.VIDEO_AND_AUDIO,
                 DownloadMode.VIDEO_ONLY,
                 DownloadMode.AUDIO_ONLY,
+                DownloadMode.VIDEO_AND_IMAGE,
                 DownloadMode.IMAGE_ONLY,
                 DownloadMode.ASSETS_ONLY,
             ]

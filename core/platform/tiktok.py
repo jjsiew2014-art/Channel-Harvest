@@ -385,7 +385,7 @@ class TikTokAdapter(PlatformAdapter):
             index_counter += 1
 
         if log_callback:
-            log_callback(f"[SUCCESS] Successfully retrieved {len(video_items)} TikTok video(s).")
+            log_callback(f"[SUCCESS] Successfully retrieved {len(video_items)} TikTok media.")
 
         return ScanResult(
             videos=video_items,

@@ -965,6 +965,7 @@ class SettingsDialog(QDialog):
         self.auth_platform_combo.addItem("Bilibili (哔哩哔哩)", "bilibili")
 
         self.auth_platform_combo.addItem("Douyin (抖音)", "douyin")
+        self.auth_platform_combo.addItem("RedNote (小红书)", "rednote")
 
         self._update_auth_platform_combo_availability()
 
@@ -1902,6 +1903,8 @@ class SettingsDialog(QDialog):
                 sess_label = tr("status_bilibili_session_detected")
             elif self._current_auth_platform == "tiktok":
                 sess_label = tr("status_tiktok_session_detected")
+            elif self._current_auth_platform == "rednote":
+                sess_label = tr("status_rednote_session_detected")
             elif self._current_auth_platform == "all":
                 sess_label = tr("status_all_session_detected")
 
@@ -2032,6 +2035,8 @@ class SettingsDialog(QDialog):
             return "x_"
         elif plat == "tiktok":
             return "tiktok_"
+        elif plat == "rednote":
+            return "rednote_"
         elif plat == "all":
             return "all_"
         return ""
@@ -2132,6 +2137,12 @@ class SettingsDialog(QDialog):
             self.cookie_privacy_lbl.setText(f"🔒 <i>{tr('auth_tiktok_privacy_notice')}</i>")
             self._test_browser_btn.setToolTip(tr("auth_test_tiktok_tooltip"))
             self._test_file_btn.setToolTip(tr("auth_test_tiktok_tooltip"))
+        elif selected == "rednote":
+            self.none_hint_lbl.setText(tr("auth_rednote_none_hint"))
+            self.browser_hint_lbl.setText(tr("auth_rednote_hint"))
+            self.cookie_privacy_lbl.setText(f"🔒 <i>{tr('auth_rednote_privacy_notice')}</i>")
+            self._test_browser_btn.setToolTip(tr("auth_test_rednote_tooltip"))
+            self._test_file_btn.setToolTip(tr("auth_test_rednote_tooltip"))
         elif selected == "all":
             self.none_hint_lbl.setText(tr("auth_all_none_hint"))
             self.browser_hint_lbl.setText(tr("auth_all_hint"))
@@ -2554,6 +2565,38 @@ class SettingsDialog(QDialog):
                         f"<b>{tr('auth_status_label')}</b> <span style='color: #d97706;'>{tr('status_cookie_file_detected')}</span> "
 
                         f"<span style='font-size: 11px; color: #d97706;'>{tr('cookie_count_no_bili_fmt', count=cookie_cnt)}</span>"
+
+                    )
+
+            elif self._current_auth_platform == "rednote":
+
+                if has_session:
+
+                    self.cookie_file_status_lbl.setText(
+
+                        f"<b>{tr('auth_status_label')}</b> <span style='color: #16a34a;'>{tr('status_cookie_file_detected')}</span> "
+
+                        f"<span style='font-size: 11px; color: #16a34a;'>{tr('cookie_rn_session_count_fmt', count=yt_cnt)}</span>"
+
+                    )
+
+                elif yt_cnt > 0:
+
+                    self.cookie_file_status_lbl.setText(
+
+                        f"<b>{tr('auth_status_label')}</b> <span style='color: #16a34a;'>{tr('status_cookie_file_detected')}</span> "
+
+                        f"<span style='font-size: 11px; color: #64748b;'>{tr('cookie_rn_count_no_session_fmt', count=yt_cnt)}</span>"
+
+                    )
+
+                else:
+
+                    self.cookie_file_status_lbl.setText(
+
+                        f"<b>{tr('auth_status_label')}</b> <span style='color: #d97706;'>{tr('status_cookie_file_detected')}</span> "
+
+                        f"<span style='font-size: 11px; color: #d97706;'>{tr('cookie_count_no_rn_fmt', count=cookie_cnt)}</span>"
 
                     )
 

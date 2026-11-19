@@ -592,6 +592,7 @@ class GalleryDlEngine:
         progress_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
         log_callback: Optional[Callable[[str], None]] = None,
         cancel_check: Optional[Callable[[], bool]] = None,
+        skip_existing: bool = True,
     ) -> Dict[str, Any]:
         """
         Downloads a media item or image set using gallery-dl.
@@ -603,6 +604,7 @@ class GalleryDlEngine:
             progress_callback: Progress signal callback.
             log_callback: Log output callback.
             cancel_check: Cancellation check callable.
+            skip_existing: Whether to skip existing downloaded files.
         Returns:
             Dict containing: success, downloaded_files, skipped, error
         """
@@ -616,6 +618,8 @@ class GalleryDlEngine:
             "--retries", "3",
             "--http-timeout", "30",
         ]
+        if not skip_existing:
+            args.append("--no-skip")
 
         low_url = (url or "").lower()
         if "facebook.com" in low_url or "fb.watch" in low_url or "fb.me" in low_url:
@@ -645,7 +649,7 @@ class GalleryDlEngine:
             })
 
         # Track directory snapshot before download to discover downloaded files
-        existing_files = set(target_dir.iterdir()) if target_dir.exists() else set()
+        existing_files_mtime = {f: f.stat().st_mtime_ns for f in target_dir.iterdir() if f.is_file()} if target_dir.exists() else {}
 
         res = self._execute_process(
             args=args,
@@ -656,8 +660,14 @@ class GalleryDlEngine:
 
         returncode, stdout, stderr = res[0], res[1], res[2]
 
-        # Snapshot after download
-        new_files = [f for f in target_dir.iterdir() if f not in existing_files and f.is_file()]
+        # Snapshot after download: either genuinely new files or overwritten files with modified mtime
+        new_files = [
+            f for f in target_dir.iterdir()
+            if f.is_file() and (f not in existing_files_mtime or f.stat().st_mtime_ns != existing_files_mtime.get(f))
+        ]
+        if not new_files and not skip_existing and filename_stem:
+            clean_s = sanitize_filename(filename_stem, max_length=120, fallback="media")
+            new_files = [f for f in target_dir.iterdir() if f.is_file() and clean_s in f.stem]
 
         if returncode == 0:
             if progress_callback:
@@ -674,7 +684,7 @@ class GalleryDlEngine:
             return {
                 "success": True,
                 "downloaded_files": [str(f) for f in new_files],
-                "skipped": len(new_files) == 0,
+                "skipped": (len(new_files) == 0) if skip_existing else False,
                 "error": "",
                 "exit_code": returncode,
             }

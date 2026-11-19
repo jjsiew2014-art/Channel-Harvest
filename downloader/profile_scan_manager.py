@@ -139,13 +139,110 @@ class ProfileScanManager:
         scan_interrupted = False
 
         # =========================================================================
+        # TASK 0: RedNote (小红书) Creator Profile Discovery
+        # =========================================================================
+        if platform == "rednote" and not (is_cancelled and is_cancelled()):
+            try:
+                from core.platform import PlatformRegistry
+                rn_adapter = adapter or PlatformRegistry.get_adapter("rednote")
+                if not rn_adapter:
+                    from core.platform.rednote import RedNoteAdapter
+                    rn_adapter = RedNoteAdapter()
+
+                if log_callback:
+                    is_coll = getattr(rn_adapter, "is_collection_url", lambda u: False)(url)
+                    target_label = "collection notes" if is_coll else "creator profile media"
+                    log_callback(f"[SCAN] Discovering {target_label} via RedNoteAdapter...")
+
+                discovered_notes = rn_adapter.extract_entries(
+                    url=url,
+                    log_callback=log_callback,
+                    custom_cookie_file=custom_cookie_file,
+                    auth_config=auth_config,
+                )
+
+                for idx, v_item in enumerate(discovered_notes, start=1):
+                    if is_cancelled and is_cancelled():
+                        scan_interrupted = True
+                        break
+
+                    parent_id = f"rn_note_{v_item.video_id}"
+                    m_type = MediaInventoryType.IMAGE if v_item.media_type == MediaType.PHOTO else MediaInventoryType.VIDEO
+                    preferred_eng = EngineType.INTERNAL if v_item.media_type == MediaType.PHOTO else EngineType.YTDLP
+
+                    post_rec = PostRecord(
+                        platform="rednote",
+                        post_id=parent_id,
+                        profile_url=url,
+                        original_url=v_item.url,
+                        canonical_url=v_item.extra_metadata.get("canonical_url", v_item.url),
+                        caption=v_item.title,
+                        author=v_item.channel_title,
+                        post_type="photo" if v_item.media_type == MediaType.PHOTO else "video",
+                        discovery_source="RedNoteAdapter",
+                        discovery_timestamp=start_time_iso,
+                    )
+                    self.inventory.upsert_post(post_rec)
+                    if parent_id not in seen_post_ids:
+                        seen_post_ids.add(parent_id)
+                        discovered_posts.append(post_rec)
+
+                    stable_id = f"rn_{v_item.video_id}"
+                    item_rec = MediaItemRecord(
+                        media_id=stable_id,
+                        platform="rednote",
+                        parent_post_id=parent_id,
+                        media_url=v_item.extra_metadata.get("origin_video_url") or v_item.cover_art_url or v_item.url,
+                        media_type=m_type,
+                        media_sequence_index=1,
+                        media_count=v_item.extra_metadata.get("photo_count") or 1,
+                        width=v_item.cover_art_width,
+                        height=v_item.cover_art_height,
+                        duration=v_item.duration_seconds,
+                        discovery_source="RedNoteAdapter",
+                        preferred_engine=preferred_eng,
+                        selected_engine=preferred_eng,
+                        download_status="PENDING",
+                    )
+                    self.inventory.upsert_media_item(item_rec)
+                    discovered_media_items.append(item_rec)
+
+                    v_item.index = len(discovered_video_items) + 1
+                    media_id_to_index[stable_id] = len(discovered_video_items)
+                    discovered_video_items.append(v_item)
+
+                    if v_item.media_type == MediaType.PHOTO:
+                        gallery_success = True
+                    else:
+                        video_success = True
+
+                    if progress_callback:
+                        try:
+                            progress_callback(
+                                len(discovered_posts),
+                                len(discovered_media_items),
+                                f"Discovered {v_item.media_type}: {v_item.title[:60]}"
+                            )
+                        except Exception:
+                            pass
+
+                if discovered_notes:
+                    if not gallery_success and not video_success:
+                        gallery_success = True
+
+            except Exception as e:
+                gallery_error = str(e)
+                if log_callback:
+                    log_callback(f"[WARNING] RedNote creator profile discovery notice: {e}")
+
+        # =========================================================================
         # TASK 1: gallery-dl Image Discovery (Photos, Albums, Carousels)
         # =========================================================================
         is_fb_video_tab = platform == "facebook" and any(k in url.lower() for k in ("/reels", "/reel", "/videos"))
         is_fb_photo_tab = platform == "facebook" and any(k in url.lower() for k in ("/photos", "/photos_by", "/photos_albums"))
         is_ig_reels_tab = platform == "instagram" and any(k in url.lower() for k in ("/reels", "/reel"))
         is_video_only_tab = is_fb_video_tab or is_ig_reels_tab
-        can_use_gallerydl = self.gallerydl.is_available() and not is_video_only_tab
+        can_use_gallerydl = self.gallerydl.is_available() and not is_video_only_tab and platform != "rednote"
         if is_fb_video_tab and log_callback:
             log_callback("[SCAN] Facebook Reels/Videos tab detected; skipping gallery-dl photo scan and focusing on video discovery.")
         elif is_ig_reels_tab and log_callback:
@@ -308,7 +405,7 @@ class ProfileScanManager:
                 gallery_error = str(e)
                 if log_callback:
                     log_callback(f"[WARNING] gallery-dl discovery notice: {e}")
-        else:
+        elif platform != "rednote":
             if not can_use_gallerydl:
                 gallery_error = "gallery-dl is not available (fallback to video-only discovery)"
                 if log_callback:
@@ -581,7 +678,7 @@ class ProfileScanManager:
         if is_fb_photo_tab:
             if log_callback:
                 log_callback("[SCAN] Facebook Photos tab detected; skipping video/reels discovery and focusing on photo discovery.")
-        elif not scan_interrupted and not (is_cancelled and is_cancelled()):
+        elif not scan_interrupted and not (is_cancelled and is_cancelled()) and platform != "rednote":
             video_attempted = True
             task_label = "Task 1/1" if is_video_only_tab else "Task 2/2"
             try:
@@ -743,6 +840,17 @@ class ProfileScanManager:
         if scan_interrupted or (is_cancelled and is_cancelled()):
             scan_status = ScanCompleteness.INTERRUPTED
             completeness_info = f"Scan interrupted by user. Preserved {total_discovered} discovered items ({photo_count} photos, {video_count} videos)."
+        elif platform == "rednote":
+            is_collection = False
+            if rn_adapter and hasattr(rn_adapter, "is_collection_url"):
+                is_collection = rn_adapter.is_collection_url(url)
+            coll_label = "collection" if is_collection else "creator profile"
+            if total_discovered > 0:
+                scan_status = ScanCompleteness.COMPLETE
+                completeness_info = f"RedNote {coll_label} enumeration completed successfully ({photo_count} photos, {video_count} videos)."
+            else:
+                scan_status = ScanCompleteness.FAILED
+                completeness_info = f"RedNote {coll_label} scan failed to discover media. Please verify the URL or configure RedNote login cookies in Settings."
         elif not is_fb_photo_tab and not is_fb_video_tab and (gallery_timed_out or video_timed_out) and total_discovered > 0:
             scan_status = ScanCompleteness.PARTIAL
             timeout_actor = "gallery-dl and video discovery" if (gallery_timed_out and video_timed_out) else ("gallery-dl" if gallery_timed_out else "video discovery")
@@ -772,7 +880,10 @@ class ProfileScanManager:
         end_time_iso = datetime.now(timezone.utc).isoformat()
         last_error_summary = None
         if scan_status == ScanCompleteness.FAILED:
-            last_error_summary = gallery_error or video_error or "Discovery failed"
+            if platform == "rednote":
+                last_error_summary = gallery_error or "RedNote profile scan failed"
+            else:
+                last_error_summary = gallery_error or video_error or "Discovery failed"
         elif scan_status == ScanCompleteness.PARTIAL:
             last_error_summary = video_error or gallery_error
 
@@ -794,7 +905,14 @@ class ProfileScanManager:
 
         # Build source title
         source_title = ""
-        if discovered_posts and discovered_posts[0].author:
+        is_rednote_coll = (
+            platform == "rednote"
+            and discovered_video_items
+            and bool(discovered_video_items[0].extra_metadata.get("collection_name"))
+        )
+        if is_rednote_coll:
+            source_title = discovered_video_items[0].extra_metadata.get("collection_name") or ""
+        elif discovered_posts and discovered_posts[0].author:
             source_title = discovered_posts[0].author
         elif discovered_video_items and discovered_video_items[0].channel_title:
             source_title = discovered_video_items[0].channel_title
@@ -813,7 +931,7 @@ class ProfileScanManager:
         return ScanResult(
             videos=discovered_video_items,
             source_title=source_title,
-            source_type="profile_archive",
+            source_type="collection" if is_rednote_coll else ("creator" if platform in ("rednote", "douyin", "tiktok") else "profile_archive"),
             platform=platform,
             url=url,
             extra_metadata={

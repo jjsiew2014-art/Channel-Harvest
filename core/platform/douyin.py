@@ -556,7 +556,7 @@ class DouyinAdapter(PlatformAdapter):
             )
 
         if log_callback:
-            log_callback(f"[SUCCESS] Successfully retrieved {len(video_items)} Douyin video(s) from creator profile.")
+            log_callback(f"[SUCCESS] Successfully retrieved {len(video_items)} Douyin media from creator profile.")
 
         return video_items
 
@@ -666,7 +666,7 @@ class DouyinAdapter(PlatformAdapter):
 
         # Single video extraction via yt-dlp
         if log_callback:
-            log_callback(f"[INFO] Connecting to Douyin video: {normalized_url}")
+            log_callback(f"[INFO] Connecting to Douyin media: {normalized_url}")
 
         engine = YtDlpEngine()
         ydl_opts = engine.build_base_ydl_opts(
@@ -818,6 +818,6 @@ class DouyinAdapter(PlatformAdapter):
             index_counter += 1
 
         if log_callback:
-            log_callback(f"[SUCCESS] Successfully retrieved {len(video_items)} Douyin video(s).")
+            log_callback(f"[SUCCESS] Successfully retrieved {len(video_items)} Douyin media.")
 
         return video_items

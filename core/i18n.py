@@ -175,6 +175,11 @@ class I18nManager:
             "zh_CN": "抖音",
             "zh_TW": "抖音",
         },
+        "platform_rednote": {
+            "en": "RedNote",
+            "zh_CN": "小红书",
+            "zh_TW": "小紅書",
+        },
         "platform_douyin_unavailable_tooltip": {
             "en": "Temporarily unavailable — waiting for an upstream yt-dlp fix.",
             "zh_CN": "暂时不可用 — 等待 yt-dlp 上游修复。",
@@ -209,6 +214,11 @@ class I18nManager:
             "zh_CN": "抖音链接",
             "zh_TW": "抖音連結",
         },
+        "section_rednote_link": {
+            "en": "REDNOTE LINK",
+            "zh_CN": "小红书链接",
+            "zh_TW": "小紅書連結",
+        },
         "tiktok_url_label": {
             "en": "TikTok Video / Profile URL",
             "zh_CN": "TikTok 视频或主页链接",
@@ -223,6 +233,11 @@ class I18nManager:
             "en": "Douyin Video / Profile URL",
             "zh_CN": "抖音视频或主页链接",
             "zh_TW": "抖音影片或個人主頁連結",
+        },
+        "rednote_url_label": {
+            "en": "RedNote Note / Collection / Profile URL",
+            "zh_CN": "小红书笔记、合集专栏或主页链接",
+            "zh_TW": "小紅書筆記、合集專欄或個人主頁連結",
         },
         "tiktok_url_placeholder": {
             "en": "https://www.tiktok.com/@creator/video/... or profile URL",
@@ -239,6 +254,11 @@ class I18nManager:
             "zh_CN": "https://www.douyin.com/video/... 或分享链接",
             "zh_TW": "https://www.douyin.com/video/... 或分享連結",
         },
+        "rednote_url_placeholder": {
+            "en": "https://www.xiaohongshu.com/discovery/item/... /collection/... or xhslink.com",
+            "zh_CN": "https://www.xiaohongshu.com/discovery/item/...、/collection/... 或 xhslink.com 分享链接",
+            "zh_TW": "https://www.xiaohongshu.com/discovery/item/...、/collection/... 或 xhslink.com 分享連結",
+        },
         "scan_tiktok": {
             "en": "Scan TikTok",
             "zh_CN": "解析视频",
@@ -253,6 +273,11 @@ class I18nManager:
             "en": "Scan Douyin",
             "zh_CN": "解析视频",
             "zh_TW": "解析影片",
+        },
+        "scan_rednote": {
+            "en": "Scan RedNote",
+            "zh_CN": "解析笔记",
+            "zh_TW": "解析筆記",
         },
         "tooltip_tiktok_no_subs": {
             "en": "TikTok does not provide separate subtitle tracks.",
@@ -891,9 +916,9 @@ class I18nManager:
             "zh_TW": "正在掃描頻道…",
         },
         "status_scan_complete_fmt": {
-            "en": "Scan complete • {count} videos found",
-            "zh_CN": "扫描完成 • 找到 {count} 个视频",
-            "zh_TW": "掃描完成 • 找到 {count} 部影片",
+            "en": "Scan complete • {count} media found",
+            "zh_CN": "扫描完成 • 找到 {count} 个媒体",
+            "zh_TW": "掃描完成 • 找到 {count} 個媒體",
         },
         "status_scan_empty": {
             "en": "Scan complete • No downloadable videos found.",
@@ -1317,6 +1342,16 @@ class I18nManager:
             "zh_CN": "已对抖音禁用身份验证。注意：抖音公开视频和创作者主页通常需要会话 Cookie 方可解析。",
             "zh_TW": "已對抖音停用身分驗證。注意：抖音公開影片和創作者主頁通常需要工作階段 Cookies 方可解析。",
         },
+        "auth_rednote_hint": {
+            "en": "RedNote (小红书) requires session cookies (a1 / web_session) to extract notes and scan creator profiles reliably. You can extract cookies from your browser or import a cookies.txt file.",
+            "zh_CN": "小红书需要有效的会话 Cookie（a1 / web_session）以稳定解析图文与视频笔记，并扫描创作者主页。您可以从浏览器读取或导入 cookies.txt 文件。",
+            "zh_TW": "小紅書需要有效的工作階段 Cookies（a1 / web_session）以穩定解析圖文與影片筆記，並掃描創作者主頁。您可以從瀏覽器讀取或匯入 cookies.txt 檔案。",
+        },
+        "auth_rednote_none_hint": {
+            "en": "Authentication is disabled for RedNote. Note that unauthenticated requests may be blocked by login walls or require xsec_token.",
+            "zh_CN": "已对小红书禁用身份验证。注意：未登录请求可能会受到登录拦截或强制要求 xsec_token。",
+            "zh_TW": "已對小紅書停用身分驗證。注意：未登入請求可能會受到登入攔截或強制要求 xsec_token。",
+        },
         "cookies_none": {
             "en": "No authentication (Default)",
             "zh_CN": "不使用认证 (默认)",
@@ -1336,6 +1371,11 @@ class I18nManager:
             "en": "Test if Douyin cookies can be safely read from the selected source",
             "zh_CN": "测试是否能安全读取所选来源的抖音 Cookie",
             "zh_TW": "測試是否能安全讀取所選來源的抖音 Cookies",
+        },
+        "auth_test_rednote_tooltip": {
+            "en": "Test if RedNote cookies can be safely read from the selected source",
+            "zh_CN": "测试是否能安全读取所选来源的小红书 Cookie",
+            "zh_TW": "測試是否能安全讀取所選來源的小紅書 Cookies",
         },
         "auth_test_title": {
             "en": "Authentication Test",
@@ -1555,6 +1595,11 @@ class I18nManager:
             "zh_CN": "已检测到抖音登录 Cookie",
             "zh_TW": "已偵測到抖音登入工作階段",
         },
+        "status_rednote_session_detected": {
+            "en": "RedNote session detected",
+            "zh_CN": "已检测到小红书登录 Cookie",
+            "zh_TW": "已偵測到小紅書登入工作階段",
+        },
         "status_decryption_failed": {
             "en": "Browser cookies could not be decrypted",
             "zh_CN": "无法解密浏览器 Cookie",
@@ -1609,6 +1654,11 @@ class I18nManager:
             "en": "Cookie files contain sensitive Douyin session information. Keep this file private and do not share it publicly.",
             "zh_CN": "Cookie 文件包含敏感的抖音登录会话信息。请妥善保管，切勿公开发布或分享。",
             "zh_TW": "Cookie 檔案包含敏感的抖音登入工作階段資訊。請妥善保管，切勿公開發布或分享。",
+        },
+        "auth_rednote_privacy_notice": {
+            "en": "Cookie files contain sensitive RedNote session information. Keep this file private and do not share it publicly.",
+            "zh_CN": "Cookie 文件包含敏感的小红书登录会话信息。请妥善保管，切勿公开发布或分享。",
+            "zh_TW": "Cookie 檔案包含機密的小紅書登入工作階段資訊。請妥善保管，切勿公開發布或分享。",
         },
         "auth_diagnostics_heading": {
             "en": "AUTHENTICATION DIAGNOSTICS",
@@ -2131,6 +2181,21 @@ class I18nManager:
             "zh_CN": "({count} 个 Cookie，未包含抖音 Cookie)",
             "zh_TW": "({count} 個 Cookies，未包含抖音 Cookies)",
         },
+        "cookie_rn_session_count_fmt": {
+            "en": "({count} RedNote session cookies)",
+            "zh_CN": "({count} 个小红书登录 Cookie)",
+            "zh_TW": "({count} 個小紅書登入 Cookies)",
+        },
+        "cookie_rn_count_no_session_fmt": {
+            "en": "({count} RedNote cookies, no active session)",
+            "zh_CN": "({count} 个小红书 Cookie，无登录会话)",
+            "zh_TW": "({count} 個小紅書 Cookies，無登入工作階段)",
+        },
+        "cookie_count_no_rn_fmt": {
+            "en": "({count} cookies, no RedNote cookies)",
+            "zh_CN": "({count} 个 Cookie，未包含小红书 Cookie)",
+            "zh_TW": "({count} 個 Cookies，未包含小紅書 Cookies)",
+        },
         "auth_click_test_bilibili_hint": {
             "en": "Click 'Test' to run a Bilibili cookie verification.",
             "zh_CN": "点击“测试登录”以执行哔哩哔哩 Cookie 验证。",
@@ -2287,9 +2352,9 @@ class I18nManager:
             "zh_TW": "[警告] 系統未偵測到 FFmpeg。視訊與音訊串流合併需要 FFmpeg 支援。",
         },
         "log_scan_finished_fmt": {
-            "en": "[SUCCESS] Channel scan finished. {count} video(s) retrieved. Inspecting subtitle tracks in background...",
-            "zh_CN": "[成功] 频道扫描完成，共获取 {count} 个视频。正在后台检测字幕可用性...",
-            "zh_TW": "[成功] 頻道掃描完成，共取得 {count} 部影片。正在背景偵測字幕可用性…",
+            "en": "[SUCCESS] Channel scan finished. {count} media retrieved. Inspecting subtitle tracks in background...",
+            "zh_CN": "[成功] 频道扫描完成，共获取 {count} 个媒体。正在后台检测字幕可用性...",
+            "zh_TW": "[成功] 頻道掃描完成，共取得 {count} 個媒體。正在背景偵測字幕可用性…",
         },
         "log_subtitle_detection_done": {
             "en": "[INFO] Subtitle availability detection completed.",
@@ -2737,6 +2802,7 @@ class I18nManager:
         DownloadMode.VIDEO_AND_AUDIO: {"en": "Video + Audio", "zh_CN": "视频 + 音频", "zh_TW": "影片 + 音訊"},
         DownloadMode.VIDEO_ONLY: {"en": "Video Only", "zh_CN": "仅视频", "zh_TW": "僅影片"},
         DownloadMode.AUDIO_ONLY: {"en": "Audio Only", "zh_CN": "仅音频", "zh_TW": "僅音訊"},
+        DownloadMode.VIDEO_AND_IMAGE: {"en": "Video + Image", "zh_CN": "视频 + 图片", "zh_TW": "影片 + 圖片"},
         DownloadMode.IMAGE_ONLY: {"en": "Image Only", "zh_CN": "仅图片", "zh_TW": "僅圖片"},
         DownloadMode.ASSETS_ONLY: {"en": "Assets Only", "zh_CN": "仅附加内容", "zh_TW": "僅附加內容"},
         "Subtitle Only": {"en": "Assets Only", "zh_CN": "仅附加内容", "zh_TW": "僅附加內容"},

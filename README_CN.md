@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <strong>YouTube、YouTube Music、TikTok、哔哩哔哩 (Bilibili)、Facebook、Instagram 与 X (Twitter) 媒体与创作者一站式归档下载器</strong><br/>
+  <strong>YouTube、YouTube Music、TikTok、哔哩哔哩 (Bilibili)、Facebook、Instagram、X (Twitter) 与 小红书 (RedNote) 媒体与创作者一站式归档下载器</strong><br/>
   收割你喜爱的频道、创作者主页、空间、专页与账号。完整保存每一份媒体资产 —— 全量视频、高清图片、无损音频、多语字幕、方形封面、逐字同步歌词与平台专属元数据档案。<br/>
   基于 Python、PySide6 (Qt for Python)、yt-dlp、gallery-dl、Deno 与 FFmpeg 构建。
 </p>
@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <img alt="版本" src="https://img.shields.io/badge/version-1.4.1-6C63FF?style=flat-square"/>
+  <img alt="版本" src="https://img.shields.io/badge/version-1.4.2-6C63FF?style=flat-square"/>
   <img alt="操作系统" src="https://img.shields.io/badge/platform-Windows%2010%20%2F%2011-blue?style=flat-square"/>
   <img alt="开源许可" src="https://img.shields.io/badge/license-MIT-22C55E?style=flat-square"/>
   <img alt="Python" src="https://img.shields.io/badge/python-3.10%2B-F59E0B?style=flat-square"/>
@@ -25,7 +25,7 @@
 
 ## 🌟 核心功能
 
-### 🌐 全方位多平台支持 (YouTube, YouTube Music, TikTok, Bilibili, Facebook, Instagram & X)
+### 🌐 全方位多平台支持 (YouTube, YouTube Music, TikTok, Bilibili, Facebook, Instagram, X & 小红书)
 通过顶部平台切换器自由切换平台，输入框自适应呈现不同平台的链接占位引导：
 
 * **🎵 YouTube Music 专属音乐平台支持**：
@@ -51,6 +51,12 @@
   * **多视频推文独立解包**：自动解包包含多条视频的合集推文为独立序号条目（`/video/1`, `/video/2`），支持单独勾选下载。
   * **智能标题净化 (`clean_x_title`)**：自动剥离冗余的 `User on X: "..."` 包装文本与尾部 `t.co` 链接，保留完整中日韩 CJK 字符与 Emoji 表情包。
   * 专属 Netscape `cookies.txt` 认证支持，轻松归档锁推账号与敏感内容限制推文。
+* **📕 小红书 (RedNote) 笔记、创作者主页与合集专栏归档**：
+  * 原生顶栏平台切换与自适应智能识别 (`xiaohongshu.com`, `rednote.com`, `xhslink.com`)。
+  * **图文与视频全要素提取**：直连官方无水印 CDN 高速下载无损图文合集（自动关联实况 Live Photo 短视频）与高清原画视频。
+  * **创作者主页瀑布流全量扫描**：智能提取博主全部公开笔记，标题前方统一固定格式化呈现 `[YYYY-MM-DD]` 发布日期前缀，彻底解决纯 Emoji 标题识别度低与本地重名冲突。
+  * **系列教程与合集专栏批量扫描**：深度枚举博主整理好的合集与专栏 (`/collection/`, `/column/`, `/board/`, `/series/`)，一键打包整套系列内容。
+  * **专属元数据与登录认证**：导出包含点赞、收藏、IP 属地、话题标签与作者署名的 `.metadata.txt`；支持浏览器 Cookie 读取或 Netscape `cookies.txt` 文件导入。
 * **🎵 TikTok 视频与创作者主页归档**：
   * 超高速批量检测与无水印视频下载，支持单视频链接 (`/video/...`, `vt.tiktok.com`) 及创作者个人主页 (`/@username`)。
   * 新增专属 Netscape `cookies.txt` 认证连接，突破年龄限制与隐私受限内容。
@@ -61,6 +67,7 @@
 
 ### 🎛️ 灵活丰富的下载与归档模式
 * **视频 + 音频 (Video + Audio)**：下载最高画质视频流并自动合并音频轨道（MP4, MOV, MKV），保留最佳观影体验。
+* **视频 + 图片 (Video + Image)**：专为混合媒体平台（Facebook, Instagram, X, 小红书等）打造的双轨下载模式，同时下载高清视频与完整图文照片，具备智能互锁保护并在扫描结果无照片时自动置灰。
 * **仅视频 (Video Only)**：下载无音频轨道的纯净超清画面。
 * **仅音频 (Audio Only)**：抽取纯净独立音频文件（WAV, MP3, M4A, FLAC, AAC, OPUS），支持自定义音质码率。
 * **仅图片 (Image Only)**：专为图文社交媒体打造的图片归档模式，提供格式转换（保持原格式, JPG, PNG, WEBP）与压缩质量设置（70% - 100%）。
@@ -106,8 +113,8 @@
 
 | 软件包版本 | 文件名 | 描述 |
 | :--- | :--- | :--- |
-| **Windows 安装向导** (推荐) | `ChannelHarvest-Setup-v1.4.1.exe` | 标准向导式安装程序 (基于 Inno Setup)，自动创建桌面快捷方式并附带卸载程序 |
-| **独立便携压缩包** | `ChannelHarvest-Portable-v1.4.1.zip` | 绿色免安装版 —— 解压到任意目录直接运行 `ChannelHarvest.exe` 即可使用 |
+| **Windows 安装向导** (推荐) | `ChannelHarvest-Setup-v1.4.2.exe` | 标准向导式安装程序 (基于 Inno Setup)，自动创建桌面快捷方式并附带卸载程序 |
+| **独立便携压缩包** | `ChannelHarvest-Portable-v1.4.2.zip` | 绿色免安装版 —— 解压到任意目录直接运行 `ChannelHarvest.exe` 即可使用 |
 
 > **提示**：两个发布包均已预先完整集成所必需的外部运行时二进制组件 (`ffmpeg.exe`, `ffprobe.exe`, `deno.exe`, `yt-dlp.exe`)，开箱即用，无需额外配置环境变量。
 
@@ -124,8 +131,8 @@
 你可以在 Windows PowerShell 中计算所下载文件的 SHA-256 哈希值，并与官方发布的 `SHA256SUMS.txt` 进行比对核实完整性：
 
 ```powershell
-Get-FileHash ChannelHarvest-Setup-v1.4.1.exe -Algorithm SHA256
-Get-FileHash ChannelHarvest-Portable-v1.4.1.zip -Algorithm SHA256
+Get-FileHash ChannelHarvest-Setup-v1.4.2.exe -Algorithm SHA256
+Get-FileHash ChannelHarvest-Portable-v1.4.2.zip -Algorithm SHA256
 ```
 
 ---
@@ -146,7 +153,7 @@ Channel Harvest/
 ├── LICENSE                        # MIT 开源许可证
 ├── README.md                      # 英文项目主文档
 ├── README_CN.md                   # 简体中文项目文档
-├── RELEASE_NOTES_v1.4.1.md        # v1.4.1 版本更新与发布说明
+├── RELEASE_NOTES_v1.4.2.md        # v1.4.2 版本更新与发布说明
 │
 ├── core/                          # 核心业务逻辑、数据模型、存储与国际化
 │   ├── __init__.py
@@ -268,8 +275,8 @@ python build.py
 2. 自动生成多尺寸应用图标并注入 Windows PE 版本元数据。
 3. 清理缓存并通过 PyInstaller 执行 onedir 冻结打包。
 4. 将 `runtime/` 工具链完整复制部署至 `dist/ChannelHarvest/` 内部。
-5. 生成便携免安装包 `release/ChannelHarvest-Portable-v1.4.1.zip`。
-6. 调用 Inno Setup 编译器生成向导安装包 `release/ChannelHarvest-Setup-v1.4.1.exe`。
+5. 生成便携免安装包 `release/ChannelHarvest-Portable-v1.4.2.zip`。
+6. 调用 Inno Setup 编译器生成向导安装包 `release/ChannelHarvest-Setup-v1.4.2.exe`。
 7. 计算全部发布资产的 SHA-256 校验和并写入 `release/SHA256SUMS.txt`。
 
 ---

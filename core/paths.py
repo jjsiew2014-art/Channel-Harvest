@@ -16,6 +16,7 @@ import shutil
 import sys
 import tempfile
 import time
+import types
 from pathlib import Path
 from typing import Optional, Set, Tuple, Union
 
@@ -404,16 +405,122 @@ def patch_subprocess_utf8_default() -> None:
 patch_subprocess_utf8_default()
 
 
+def _find_certifi_pem_bundle(certifi_mod: Optional[types.ModuleType] = None) -> Optional[Path]:
+    """Locates an existing CA bundle (`cacert.pem`) across frozen, resource, and sys.path dirs."""
+    candidates = []
+    if certifi_mod is not None:
+        for pkg_dir in getattr(certifi_mod, "__path__", []) or []:
+            if pkg_dir:
+                candidates.append(Path(pkg_dir) / "cacert.pem")
+
+    candidates.append(get_resource_path("certifi/cacert.pem"))
+
+    for entry in sys.path:
+        if entry:
+            candidates.append(Path(entry) / "certifi" / "cacert.pem")
+
+    for env_key in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE"):
+        env_val = os.environ.get(env_key, "").strip()
+        if env_val:
+            candidates.append(Path(env_val))
+
+    seen = set()
+    for cand in candidates:
+        key = str(cand)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            if cand.is_file():
+                return cand
+        except OSError:
+            continue
+    return None
+
+
+def _patch_certifi_module(mod: types.ModuleType, pem_path: Optional[Path]) -> None:
+    """Populates `where()` and `contents()` on a certifi or certifi.core module object."""
+    pem_str = str(pem_path) if pem_path is not None else ""
+
+    def _where() -> str:
+        return pem_str
+
+    def _contents() -> str:
+        if pem_path is not None and pem_path.is_file():
+            return pem_path.read_text(encoding="ascii")
+        return ""
+
+    mod.where = _where
+    mod.contents = _contents
+    mod.__all__ = ["contents", "where"]
+
+
+def _apply_ca_bundle_env(pem_path: Optional[Path]) -> None:
+    """Sets standard TLS CA bundle env vars if unset or pointing to a nonexistent file."""
+    if pem_path is None or not pem_path.is_file():
+        return
+    for env_key in ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE"):
+        existing = os.environ.get(env_key, "").strip()
+        if not existing or not Path(existing).is_file():
+            os.environ[env_key] = str(pem_path)
+
+
+def ensure_certifi_bundle() -> Optional[Path]:
+    """
+    Ensures `certifi` exposes a callable `where()` returning a valid CA bundle path.
+
+    In PyInstaller frozen builds, `_internal/certifi/cacert.pem` is staged on disk without
+    `__init__.py`. If Python resolves `_internal/certifi` as a PEP 420 namespace package
+    instead of loading `certifi` from PYZ, `import certifi` succeeds with no `where()`
+    attribute, crashing `yt_dlp.dependencies` on startup with AttributeError.
+    """
+    certifi_mod: Optional[types.ModuleType] = sys.modules.get("certifi")
+    if certifi_mod is None:
+        try:
+            import certifi as imported_certifi  # type: ignore
+            certifi_mod = imported_certifi
+        except ImportError:
+            certifi_mod = None
+
+    where_fn = getattr(certifi_mod, "where", None)
+    if certifi_mod is not None and callable(where_fn):
+        try:
+            current_pem = Path(where_fn())
+            if current_pem.is_file():
+                _apply_ca_bundle_env(current_pem)
+                return current_pem
+        except Exception:
+            pass
+
+    pem_path = _find_certifi_pem_bundle(certifi_mod)
+    if certifi_mod is None:
+        certifi_mod = types.ModuleType("certifi")
+        sys.modules["certifi"] = certifi_mod
+    _patch_certifi_module(certifi_mod, pem_path)
+
+    core_mod = sys.modules.get("certifi.core")
+    if core_mod is None or not callable(getattr(core_mod, "where", None)):
+        if core_mod is None:
+            core_mod = types.ModuleType("certifi.core")
+            sys.modules["certifi.core"] = core_mod
+        _patch_certifi_module(core_mod, pem_path)
+
+    _apply_ca_bundle_env(pem_path)
+    return pem_path
+
+
 def setup_runtime_environment() -> None:
     """
     Initializes runtime environment:
     1. Ensures cwd, TEMP/TMP environment, and tempfile are safe, writable, and non-system32.
-    2. Prepends %APPDATA%/ChannelHarvest/packages to sys.path so updated packages (e.g. yt-dlp) are loaded.
-    3. Prepends runtime and user-runtime directories to system PATH for child processes.
-    4. Guarantees subprocess text mode defaults to UTF-8 with replace error handling on Windows.
+    2. Ensures `certifi` and TLS CA bundle (`cacert.pem`) are valid before third-party imports.
+    3. Prepends %APPDATA%/ChannelHarvest/packages to sys.path so updated packages (e.g. yt-dlp) are loaded.
+    4. Prepends runtime and user-runtime directories to system PATH for child processes.
+    5. Guarantees subprocess text mode defaults to UTF-8 with replace error handling on Windows.
     """
     patch_subprocess_utf8_default()
     ensure_safe_environment()
+    ensure_certifi_bundle()
 
     user_pkgs = get_app_data_dir() / "packages"
     if user_pkgs.exists() and str(user_pkgs) not in sys.path:

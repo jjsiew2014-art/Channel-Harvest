@@ -47,6 +47,7 @@ class TestMediaImageOnlyAndUniqueFolder(unittest.TestCase):
         I18nManager.set_language("en")
         try:
             SettingsManager().set("download_mode", DownloadMode.VIDEO_AND_AUDIO)
+            SettingsManager().set("selected_platform", "youtube")
         except Exception:
             pass
 

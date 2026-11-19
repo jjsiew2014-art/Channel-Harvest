@@ -609,7 +609,7 @@ class CoverArtManager:
                 already_downloaded = True
 
         if not already_downloaded and dest_file.is_file() and dest_file.stat().st_size > 0:
-            if is_album_cover or settings.skip_existing:
+            if settings.skip_existing:
                 already_downloaded = True
 
         if already_downloaded and dest_file.is_file() and dest_file.stat().st_size > 0:

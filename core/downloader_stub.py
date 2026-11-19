@@ -113,7 +113,7 @@ class DownloaderService(QObject):
         ]
 
         self.channel_scanned.emit(mock_videos)
-        self.log_message.emit(f"[SUCCESS] Scan completed. Found {len(mock_videos)} videos in channel.")
+        self.log_message.emit(f"[SUCCESS] Scan completed. Found {len(mock_videos)} media in channel.")
 
     def start_download(self, videos: List[VideoItem], settings: DownloadSettings) -> None:
         """
@@ -138,7 +138,7 @@ class DownloaderService(QObject):
         self._current_percent = 0
 
         self.log_message.emit("=" * 60)
-        self.log_message.emit(f"[INFO] Download started for {len(self._queue)} video(s).")
+        self.log_message.emit(f"[INFO] Download started for {len(self._queue)} media.")
         self.log_message.emit(f"[CONFIG] Target Folder : {settings.download_folder}")
         self.log_message.emit(f"[CONFIG] Target Format : {settings.format}")
         self.log_message.emit(f"[CONFIG] Target Quality: {settings.quality}")
@@ -216,5 +216,5 @@ class DownloaderService(QObject):
         self._mock_timer.stop()
         self._is_downloading = False
         self.progress_updated.emit("All selected downloads finished!", 100, "0.0 MB/s", "00:00")
-        self.log_message.emit(f"[SUCCESS] All {len(self._queue)} video(s) processed successfully!")
+        self.log_message.emit(f"[SUCCESS] All {len(self._queue)} media processed successfully!")
         self.download_finished.emit(len(self._queue))

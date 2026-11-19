@@ -79,6 +79,9 @@ class TestSourceTitleDisplay(unittest.TestCase):
             self.window._scan_worker.terminate()
             self.window._scan_worker.wait(500)
         self.window.close()
+        self.window.deleteLater()
+        if hasattr(self, "app") and self.app:
+            self.app.processEvents()
 
     # -------------------------------------------------------------------------
     # Criterion 1: YouTube channel scan displays channel name

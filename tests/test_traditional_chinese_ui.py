@@ -237,7 +237,7 @@ class TestTranslationCoverageAndPlaceholders(unittest.TestCase):
         )
 
         self.assertGreaterEqual(len(I18nManager._STRINGS), 350)
-        self.assertEqual(len(I18nManager._STRINGS), 496)
+        self.assertEqual(len(I18nManager._STRINGS), 526)
 
 
 

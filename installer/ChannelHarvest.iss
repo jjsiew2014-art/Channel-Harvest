@@ -2,7 +2,7 @@
 ; Commercial-grade Windows Installer Configuration
 
 #define MyAppName "Channel Harvest"
-#define MyAppVersion "1.4.1"
+#define MyAppVersion "1.4.2"
 #define MyAppPublisher "jjsiew2014-art"
 
 

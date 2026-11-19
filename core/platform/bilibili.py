@@ -1027,7 +1027,7 @@ class BilibiliAdapter(PlatformAdapter):
             raise EmptyChannelError(f"No downloadable videos found for Bilibili source '{source_title}'.")
 
         if log_callback:
-            log_callback(f"[SUCCESS] Successfully retrieved {len(video_items)} Bilibili video(s).")
+            log_callback(f"[SUCCESS] Successfully retrieved {len(video_items)} Bilibili media.")
             if video_items:
                 log_callback(f"[INFO] Bilibili sample: '{video_items[0].title}' (ID: {video_items[0].video_id})")
 

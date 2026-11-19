@@ -493,6 +493,7 @@ class MainWindow(QMainWindow):
         self.platform_combo.addItem(tr("platform_facebook"), "facebook")
         self.platform_combo.addItem(tr("platform_instagram"), "instagram")
         self.platform_combo.addItem(tr("platform_x"), "x")
+        self.platform_combo.addItem(tr("platform_rednote"), "rednote")
         self._update_platform_combo_availability()
         self.platform_combo.currentIndexChanged.connect(self._on_platform_changed)
         platform_layout.addWidget(self.platform_combo)
@@ -663,6 +664,7 @@ class MainWindow(QMainWindow):
             DownloadMode.VIDEO_AND_AUDIO,
             DownloadMode.VIDEO_ONLY,
             DownloadMode.AUDIO_ONLY,
+            DownloadMode.VIDEO_AND_IMAGE,
             DownloadMode.IMAGE_ONLY,
             DownloadMode.ASSETS_ONLY,
         ]:
@@ -1225,7 +1227,7 @@ class MainWindow(QMainWindow):
         if not cleaned:
             return
         detected = PlatformDetector.identify_platform_id(cleaned)
-        if detected in ("youtube", "youtubemusic", "facebook", "instagram", "x", "bilibili", "tiktok", "douyin"):
+        if detected in ("youtube", "youtubemusic", "facebook", "instagram", "x", "bilibili", "tiktok", "douyin", "rednote"):
             if not PlatformRegistry.is_available(detected):
                 # Do NOT auto-switch to a temporarily frozen platform
                 return
@@ -1308,11 +1310,7 @@ class MainWindow(QMainWindow):
         try:
             self._active_platform = platform_id
             if hasattr(self, "mode_combo"):
-                combo_model = self.mode_combo.model()
-                for i in range(self.mode_combo.count()):
-                    item = combo_model.item(i) if hasattr(combo_model, "item") else None
-                    if item:
-                        item.setEnabled(True)
+                self._update_mode_combo_availability()
             is_youtubemusic = (platform_id == "youtubemusic")
             is_douyin = (platform_id == "douyin")
             is_tiktok = (platform_id == "tiktok")
@@ -1320,6 +1318,7 @@ class MainWindow(QMainWindow):
             is_facebook = (platform_id == "facebook")
             is_instagram = (platform_id == "instagram")
             is_x = (platform_id == "x")
+            is_rednote = (platform_id == "rednote")
 
             if is_douyin:
                 if hasattr(self, "url_group"):
@@ -1366,6 +1365,15 @@ class MainWindow(QMainWindow):
                     self.url_input.setPlaceholderText(tr("x_url_placeholder"))
                 if hasattr(self, "scan_btn") and getattr(self, "_current_ui_state", "idle") == "idle":
                     self.scan_btn.setText(tr("scan_x"))
+            elif is_rednote:
+                if hasattr(self, "url_group"):
+                    self.url_group.setTitle(tr("section_rednote_link"))
+                if hasattr(self, "url_label"):
+                    self.url_label.setText(tr("rednote_url_label"))
+                if hasattr(self, "url_input"):
+                    self.url_input.setPlaceholderText(tr("rednote_url_placeholder"))
+                if hasattr(self, "scan_btn") and getattr(self, "_current_ui_state", "idle") == "idle":
+                    self.scan_btn.setText(tr("scan_rednote"))
             elif is_bilibili:
                 if hasattr(self, "url_group"):
                     self.url_group.setTitle(tr("section_bilibili_link"))
@@ -1644,6 +1652,7 @@ class MainWindow(QMainWindow):
                 DownloadMode.VIDEO_ONLY,
                 DownloadMode.AUDIO_ONLY,
                 DownloadMode.VIDEO_AND_AUDIO,
+                DownloadMode.VIDEO_AND_IMAGE,
                 DownloadMode.IMAGE_ONLY,
                 DownloadMode.ASSETS_ONLY,
                 "Subtitle Only",
@@ -1651,7 +1660,11 @@ class MainWindow(QMainWindow):
                 canonical_mode = mode_text
 
         is_image_only = (canonical_mode == DownloadMode.IMAGE_ONLY)
-        enable_video = canonical_mode in (DownloadMode.VIDEO_ONLY, DownloadMode.VIDEO_AND_AUDIO)
+        enable_video = canonical_mode in (
+            DownloadMode.VIDEO_ONLY,
+            DownloadMode.VIDEO_AND_AUDIO,
+            DownloadMode.VIDEO_AND_IMAGE,
+        )
         enable_audio = canonical_mode in (DownloadMode.AUDIO_ONLY, DownloadMode.VIDEO_AND_AUDIO)
         is_assets_only = canonical_mode in (DownloadMode.ASSETS_ONLY, "Subtitle Only")
 
@@ -1743,6 +1756,88 @@ class MainWindow(QMainWindow):
 
             self._on_subtitles_toggled()
         self._update_cover_art_ui()
+
+    def _update_mode_combo_availability(self, videos: Optional[List[VideoItem]] = None) -> None:
+        """
+        Dynamically enables/disables options in mode_combo based on scan results and platform capabilities:
+        - When scan results contain both Photos and Videos: auto-selects "Video + Image", all modes enabled.
+        - When scan results contain only Photos: auto-selects "Image Only", video modes disabled.
+        - When scan results contain no Photos (or platform does not support photos):
+          "Video + Image" and "Image Only" automatically become grayed out / disabled.
+        """
+        if not hasattr(self, "mode_combo"):
+            return
+
+        combo_model = self.mode_combo.model()
+        if not hasattr(combo_model, "item"):
+            return
+
+        if videos is None and hasattr(self, "video_table"):
+            videos = getattr(self.video_table, "_videos", []) or []
+
+        platform_id = self.platform_combo.currentData() if hasattr(self, "platform_combo") else "youtube"
+        supports_photos = platform_id in ("facebook", "instagram", "x", "rednote")
+
+        from core.models import MediaType
+        has_items = bool(videos)
+        has_photos = has_items and any(getattr(v, "media_type", None) == MediaType.PHOTO for v in videos)
+        has_videos = has_items and any(getattr(v, "media_type", None) in (MediaType.VIDEO, MediaType.REEL) for v in videos)
+
+        if has_photos and has_videos:
+            idx_vi = self.mode_combo.findData(DownloadMode.VIDEO_AND_IMAGE)
+            if idx_vi >= 0:
+                self.mode_combo.blockSignals(True)
+                self.mode_combo.setCurrentIndex(idx_vi)
+                self.mode_combo.blockSignals(False)
+                self._on_mode_changed(DownloadMode.VIDEO_AND_IMAGE)
+            for i in range(self.mode_combo.count()):
+                item = combo_model.item(i)
+                if item:
+                    item.setEnabled(True)
+
+        elif has_photos and not has_videos:
+            idx_io = self.mode_combo.findData(DownloadMode.IMAGE_ONLY)
+            if idx_io >= 0:
+                self.mode_combo.blockSignals(True)
+                self.mode_combo.setCurrentIndex(idx_io)
+                self.mode_combo.blockSignals(False)
+                self._on_mode_changed(DownloadMode.IMAGE_ONLY)
+            for i in range(self.mode_combo.count()):
+                d = self.mode_combo.itemData(i)
+                item = combo_model.item(i)
+                if item:
+                    item.setEnabled(d == DownloadMode.IMAGE_ONLY)
+
+        elif has_items and not has_photos:
+            for i in range(self.mode_combo.count()):
+                d = self.mode_combo.itemData(i)
+                item = combo_model.item(i)
+                if item:
+                    if d in (DownloadMode.VIDEO_AND_IMAGE, DownloadMode.IMAGE_ONLY):
+                        item.setEnabled(False)
+                    else:
+                        item.setEnabled(True)
+
+            if self.mode_combo.currentData() in (DownloadMode.VIDEO_AND_IMAGE, DownloadMode.IMAGE_ONLY):
+                default_idx = self.mode_combo.findData(DownloadMode.VIDEO_AND_AUDIO)
+                if default_idx < 0:
+                    default_idx = self.mode_combo.findData(DownloadMode.VIDEO_ONLY)
+                if default_idx >= 0:
+                    self.mode_combo.blockSignals(True)
+                    self.mode_combo.setCurrentIndex(default_idx)
+                    self.mode_combo.blockSignals(False)
+                    self._on_mode_changed(self.mode_combo.itemData(default_idx))
+
+        else:
+            # Table is empty (idle)
+            for i in range(self.mode_combo.count()):
+                d = self.mode_combo.itemData(i)
+                item = combo_model.item(i)
+                if item:
+                    if not supports_photos and d in (DownloadMode.VIDEO_AND_IMAGE, DownloadMode.IMAGE_ONLY):
+                        item.setEnabled(False)
+                    else:
+                        item.setEnabled(True)
 
     def _on_subtitles_toggled(self) -> None:
         """Enables or disables subtitle configuration dropdowns based on checkbox state and platform capabilities."""
@@ -2198,32 +2293,10 @@ class MainWindow(QMainWindow):
             if not v.is_inaccessible:
                 v.selected = True
 
-        # Automatic Image Only mode selection when scan results contain only photos (Requirement 2)
+        # Automatic mode selection and availability based on scan results
         from core.models import MediaType
         is_photo_only_scan = bool(videos) and all(getattr(v, "media_type", None) == MediaType.PHOTO for v in videos)
-        if is_photo_only_scan:
-            idx = self.mode_combo.findData(DownloadMode.IMAGE_ONLY)
-            if idx >= 0:
-                self.mode_combo.blockSignals(True)
-                self.mode_combo.setCurrentIndex(idx)
-                self.mode_combo.blockSignals(False)
-                self._on_mode_changed(DownloadMode.IMAGE_ONLY)
-            combo_model = self.mode_combo.model()
-            for i in range(self.mode_combo.count()):
-                d = self.mode_combo.itemData(i)
-                item = combo_model.item(i) if hasattr(combo_model, "item") else None
-                if item:
-                    item.setEnabled(d == DownloadMode.IMAGE_ONLY)
-        else:
-            if self.mode_combo.currentData() == DownloadMode.IMAGE_ONLY:
-                default_idx = self.mode_combo.findData(DownloadMode.VIDEO_AND_AUDIO)
-                if default_idx >= 0:
-                    self.mode_combo.setCurrentIndex(default_idx)
-            combo_model = self.mode_combo.model()
-            for i in range(self.mode_combo.count()):
-                item = combo_model.item(i) if hasattr(combo_model, "item") else None
-                if item:
-                    item.setEnabled(True)
+        self._update_mode_combo_availability(videos)
 
         self.video_table.load_videos(videos)
         self.video_table.select_all(True)
@@ -2938,6 +3011,8 @@ class MainWindow(QMainWindow):
                     self.platform_combo.setItemText(i, tr("platform_tiktok"))
                 elif d == "douyin":
                     self.platform_combo.setItemText(i, tr("platform_douyin"))
+                elif d == "rednote":
+                    self.platform_combo.setItemText(i, tr("platform_rednote"))
             self._update_platform_combo_availability()
             self._apply_platform_ui(current_id)
         else:

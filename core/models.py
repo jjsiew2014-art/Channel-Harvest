@@ -72,6 +72,7 @@ class DownloadMode:
     VIDEO_ONLY = "Video Only"
     AUDIO_ONLY = "Audio Only"
     VIDEO_AND_AUDIO = "Video + Audio"
+    VIDEO_AND_IMAGE = "Video + Image"
     IMAGE_ONLY = "Image Only"
     ASSETS_ONLY = "Assets Only"
     SUBTITLE_ONLY = ASSETS_ONLY
@@ -160,6 +161,9 @@ class VideoItem:
     def formatted_duration(self) -> str:
         """Returns formatted duration string (e.g. '03:25', '1:02:15') or '-' for photo/unknown."""
         if self.media_type == MediaType.PHOTO:
+            p_cnt = (self.extra_metadata or {}).get("photo_count")
+            if p_cnt and isinstance(p_cnt, int) and p_cnt > 0:
+                return f"{p_cnt}P"
             return "-"
         if self.duration_seconds is not None and isinstance(self.duration_seconds, (int, float)):
             sec = int(self.duration_seconds)
@@ -416,6 +420,13 @@ class DownloadSettings:
     all_custom_cookie_file: str = ""
 
     def __post_init__(self):
+        if self.skip_existing or self.skip_downloaded_media:
+            self.skip_existing = True
+            self.skip_downloaded_media = True
+        else:
+            self.skip_existing = False
+            self.skip_downloaded_media = False
+
         if self.add_number_prefix and not self.add_number_to_filename:
             self.add_number_to_filename = True
         elif self.add_number_to_filename and not self.add_number_prefix:

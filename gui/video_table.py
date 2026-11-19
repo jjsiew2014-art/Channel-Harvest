@@ -378,9 +378,24 @@ class VideoTableWidget(QWidget):
             title_item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable if not is_inacc else Qt.ItemFlag.ItemIsSelectable)
             if is_inacc:
                 title_item.setForeground(disabled_color)
-                title_item.setToolTip(f"{video.title}\n{tr('avail_tooltip_disabled', reason=reason_text)}\n{tr('video_id_prefix', id=video.video_id)}\n{tr('url_prefix', url=video.url)}")
-            else:
-                title_item.setToolTip(f"{video.title}\n{tr('video_id_prefix', id=video.video_id)}\n{tr('url_prefix', url=video.url)}")
+
+            tooltip_lines = [video.title]
+            if video.extra_metadata and isinstance(video.extra_metadata, dict):
+                up_date = video.extra_metadata.get("upload_date")
+                if up_date:
+                    tooltip_lines.append(f"Date: {up_date}")
+                liked_cnt = video.extra_metadata.get("liked_count")
+                if liked_cnt:
+                    tooltip_lines.append(f"Likes: {liked_cnt}")
+                uploader_name = video.extra_metadata.get("uploader") or video.channel_title
+                if uploader_name:
+                    tooltip_lines.append(f"Author: {uploader_name}")
+
+            if is_inacc:
+                tooltip_lines.append(tr('avail_tooltip_disabled', reason=reason_text))
+            tooltip_lines.append(tr('video_id_prefix', id=video.video_id))
+            tooltip_lines.append(tr('url_prefix', url=video.url))
+            title_item.setToolTip("\n".join(tooltip_lines))
             self.table.setItem(row, self.COL_TITLE, title_item)
 
             # Col 3: Media Type

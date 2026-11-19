@@ -1097,26 +1097,29 @@ class TestDouyinTemporaryFreeze(unittest.TestCase):
                 combo = win.platform_combo
                 model = combo.model()
 
-                # Verify YouTube item (index 0)
-                yt_item = model.item(0)
-                self.assertEqual(combo.itemData(0), "youtube")
+                # Verify YouTube item
+                yt_idx = combo.findData("youtube")
+                yt_item = model.item(yt_idx)
+                self.assertEqual(combo.itemData(yt_idx), "youtube")
                 self.assertTrue(yt_item.isEnabled())
 
-                # Verify TikTok item (index 1)
-                tt_item = model.item(1)
-                self.assertEqual(combo.itemData(1), "tiktok")
+                # Verify TikTok item
+                tt_idx = combo.findData("tiktok")
+                tt_item = model.item(tt_idx)
+                self.assertEqual(combo.itemData(tt_idx), "tiktok")
                 self.assertTrue(tt_item.isEnabled())
 
-                # Verify Douyin item (index 2)
-                dy_item = model.item(2)
-                self.assertEqual(combo.itemData(2), "douyin")
+                # Verify Douyin item
+                dy_idx = combo.findData("douyin")
+                dy_item = model.item(dy_idx)
+                self.assertEqual(combo.itemData(dy_idx), "douyin")
                 self.assertFalse(dy_item.isEnabled())
                 self.assertEqual(dy_item.toolTip(), tr("platform_douyin_unavailable_tooltip"))
 
                 # Verify attempting to select Douyin programmatically reverts to YouTube/active
-                combo.setCurrentIndex(2)
+                combo.setCurrentIndex(dy_idx)
                 self.assertNotEqual(combo.currentData(), "douyin")
-                self.assertIn(combo.currentData(), ("youtube", "tiktok"))
+                self.assertIn(combo.currentData(), ("youtube", "tiktok", "youtubemusic"))
 
                 # Verify pasting Douyin URL does not switch combo
                 win.url_input.setText("https://www.douyin.com/video/7106594312292453678")

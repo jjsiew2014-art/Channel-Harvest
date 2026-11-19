@@ -16,6 +16,7 @@ from metadata.bilibili_formatter import BilibiliMetadataFormatter
 from metadata.facebook_formatter import FacebookMetadataFormatter
 from metadata.instagram_formatter import InstagramMetadataFormatter
 from metadata.x_formatter import XMetadataFormatter
+from metadata.rednote_formatter import RedNoteMetadataFormatter
 from metadata.generic_formatter import GenericMetadataFormatter
 
 logger = logging.getLogger("MetadataExporter")
@@ -36,6 +37,8 @@ class MetadataExporter:
         "twitter": XMetadataFormatter(),
         "tiktok": TikTokMetadataFormatter(),
         "bilibili": BilibiliMetadataFormatter(),
+        "rednote": RedNoteMetadataFormatter(),
+        "xiaohongshu": RedNoteMetadataFormatter(),
         "generic": GenericMetadataFormatter(),
     }
 
@@ -52,6 +55,11 @@ class MetadataExporter:
         re.compile(r"auth_token=[^;\s]+", re.IGNORECASE),
         re.compile(r"ct0=[^;\s]+", re.IGNORECASE),
         re.compile(r"twid=[^;\s]+", re.IGNORECASE),
+        re.compile(r"a1=[^;\s]+", re.IGNORECASE),
+        re.compile(r"web_session=[^;\s]+", re.IGNORECASE),
+        re.compile(r"webId=[^;\s]+", re.IGNORECASE),
+        re.compile(r"gid=[^;\s]+", re.IGNORECASE),
+        re.compile(r"xsec_token=[^&;\s]+", re.IGNORECASE),
         re.compile(r"Bearer\s+[A-Za-z0-9\-._~+/]+=*", re.IGNORECASE),
         re.compile(r"Authorization:\s*Basic\s+[A-Za-z0-9+/=]+", re.IGNORECASE),
     ]
@@ -92,6 +100,8 @@ class MetadataExporter:
                 resolved_id = "instagram"
             elif "twitter" in extractor or extractor == "x":
                 resolved_id = "x"
+            elif "xiaohongshu" in extractor or "rednote" in extractor:
+                resolved_id = "rednote"
 
         return cls._FORMATTERS.get(resolved_id, cls._FORMATTERS["generic"])
 

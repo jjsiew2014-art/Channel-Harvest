@@ -15,6 +15,7 @@ from core.platform.bilibili import BilibiliAdapter
 from core.platform.facebook import FacebookAdapter
 from core.platform.instagram import InstagramAdapter
 from core.platform.x import XAdapter
+from core.platform.rednote import RedNoteAdapter
 
 # Auto-register default platform adapters
 PlatformRegistry.register(YouTubeAdapter())
@@ -25,6 +26,7 @@ PlatformRegistry.register(XAdapter())
 PlatformRegistry.register(BilibiliAdapter())
 PlatformRegistry.register(TikTokAdapter())
 PlatformRegistry.register(DouyinAdapter())
+PlatformRegistry.register(RedNoteAdapter())
 
 __all__ = [
     "PlatformCapabilities",
@@ -40,4 +42,5 @@ __all__ = [
     "BilibiliAdapter",
     "TikTokAdapter",
     "DouyinAdapter",
+    "RedNoteAdapter",
 ]

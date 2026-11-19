@@ -15,6 +15,11 @@ from PySide6.QtCore import Qt, qInstallMessageHandler, QtMsgType
 from PySide6.QtGui import QIcon
 
 from core.paths import get_logo_file, get_app_icon_file, setup_runtime_environment
+
+# Initialize safe directories, certifi CA bundle, and runtime paths before importing
+# gui.main_window (whose top-level yt_dlp/requests imports rely on certifi.where()).
+setup_runtime_environment()
+
 from core.settings import SettingsManager
 from gui.main_window import MainWindow
 from gui.styles import ThemeManager

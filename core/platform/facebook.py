@@ -703,9 +703,9 @@ class FacebookAdapter(PlatformAdapter):
             raise EmptyChannelError(f"No downloadable videos found for Facebook source '{source_title}'.")
 
         if log_callback:
-            log_callback(f"[SUCCESS] Successfully retrieved {len(video_items)} Facebook video(s).")
+            log_callback(f"[SUCCESS] Successfully retrieved {len(video_items)} Facebook media.")
             if video_items:
-                log_callback(f"[INFO] Facebook video: '{video_items[0].title}' (ID: {video_items[0].video_id})")
+                log_callback(f"[INFO] Facebook media: '{video_items[0].title}' (ID: {video_items[0].video_id})")
 
         return ScanResult(
             videos=video_items,

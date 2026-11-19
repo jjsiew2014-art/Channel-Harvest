@@ -659,7 +659,7 @@ class InstagramAdapter(PlatformAdapter):
             )
 
         if log_callback:
-            log_callback(f"[SUCCESS] Successfully retrieved {len(video_items)} Instagram video(s).")
+            log_callback(f"[SUCCESS] Successfully retrieved {len(video_items)} Instagram media.")
             if video_items:
                 log_callback(f"[INFO] First item: '{video_items[0].title}' (ID: {video_items[0].video_id})")
 

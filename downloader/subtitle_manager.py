@@ -455,7 +455,8 @@ class SubtitleManager:
         ydl_opts.update({
             "skip_download": True,
             "windowsfilenames": True,
-            "continuedl": True,
+            "continuedl": settings.skip_existing,
+            "overwrites": not settings.skip_existing,
             "writesubtitles": use_manual,
             "writeautomaticsub": use_auto,
             "subtitleslangs": sub_langs,

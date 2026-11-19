@@ -12,7 +12,11 @@ Coordinates sequential video downloads in a dedicated QThread:
 
 import re
 import time
+import shutil
 import threading
+import urllib.request
+import urllib.error
+import http.cookiejar
 from pathlib import Path
 from dataclasses import replace
 from typing import List, Optional, Dict, Any
@@ -31,7 +35,9 @@ from core.paths import (
     should_include_video_id,
     ensure_safe_environment,
     cleanup_temp_dir,
+    get_bundled_executable,
 )
+from downloader.format_selector import FormatSelector
 from downloader.ytdlp_engine import (
     YtDlpEngine,
     DownloaderError,
@@ -44,7 +50,7 @@ from downloader.info_manager import InfoManager
 from core.diagnostics import ErrorTracker
 from core.error_classifier import ErrorClassifier, ErrorCategory, DownloadError
 from core.platform import PlatformRegistry
-from core.inventory import ProfileMediaInventory, MediaDownloadStatus
+from core.inventory import ProfileMediaInventory, MediaDownloadStatus, MediaInventoryType
 from downloader.gallerydl_engine import GalleryDlEngine, GalleryDlError, GalleryDlCancelledException
 from downloader.engine_router import DownloadEngineRouter, EngineType
 from downloader.cover_art_manager import (
@@ -347,18 +353,20 @@ class DownloadManager(QThread):
                 continue
 
             orig_ext = file_path.suffix.lower()
-            if orig_ext == target_ext or (target_ext in (".jpg", ".jpeg") and orig_ext in (".jpg", ".jpeg")):
-                converted_list.append(file_path_str)
-                continue
-
             out_path = file_path.with_suffix(target_ext)
             try:
                 with Image.open(file_path) as im:
+                    src_fmt = (im.format or "").upper()
+                    if orig_ext == target_ext and ((pil_format == "JPEG" and src_fmt in ("JPEG", "JPG")) or pil_format == src_fmt):
+                        converted_list.append(file_path_str)
+                        continue
                     save_kwargs = {}
                     if pil_format == "JPEG":
                         if im.mode in ("RGBA", "LA", "P"):
                             im = im.convert("RGB")
                         save_kwargs["quality"] = quality
+                        if quality >= 90:
+                            save_kwargs["subsampling"] = 0
                     elif pil_format == "WEBP":
                         save_kwargs["quality"] = quality
                     elif pil_format == "PNG":
@@ -392,14 +400,16 @@ class DownloadManager(QThread):
 
         self.queue_started.emit(total_videos)
         self.log_message.emit("=" * 65)
-        self.log_message.emit(f"[INFO] Download Queue Started: {total_videos} video(s)")
+        self.log_message.emit(f"[INFO] Download Queue Started: {total_videos} media")
         cwd, safe_temp = ensure_safe_environment()
         self.log_message.emit(f"[INFO] Working Directory: {cwd}")
         self.log_message.emit(f"[INFO] Temporary Directory: {safe_temp}")
         mode_val = self.settings.download_mode or DownloadMode.VIDEO_ONLY
         self.log_message.emit(f"[CONFIG] Download Mode : {mode_val}")
-        if mode_val in (DownloadMode.VIDEO_ONLY, DownloadMode.VIDEO_AND_AUDIO):
+        if mode_val in (DownloadMode.VIDEO_ONLY, DownloadMode.VIDEO_AND_AUDIO, DownloadMode.VIDEO_AND_IMAGE):
             self.log_message.emit(f"[CONFIG] Video Format  : {self.settings.format} ({self.settings.quality}, {self.settings.bitrate})")
+        if mode_val in (DownloadMode.IMAGE_ONLY, DownloadMode.VIDEO_AND_IMAGE):
+            self.log_message.emit(f"[CONFIG] Image Format  : {getattr(self.settings, 'image_format', 'Keep Original')}")
         # Log subtitle configuration if active
         if self.settings.download_subtitles:
             self.log_message.emit(f"[CONFIG] Subtitle      : {self.settings.subtitle_language} ({self.settings.subtitle_source}, {self.settings.subtitle_format})")
@@ -437,8 +447,8 @@ class DownloadManager(QThread):
             self.log_message.emit(f"[CONFIG] Custom Folder  : Yes ({custom_folder.strip()})")
         else:
             self.log_message.emit(f"[CONFIG] Channel Folder : {'Yes' if self.settings.create_channel_folder else 'No'}")
-        self.log_message.emit(f"[CONFIG] Video Folders  : {'Yes' if self.settings.create_individual_video_folders else 'No'}")
-        self.log_message.emit(f"[CONFIG] Video ID in File: {'Yes' if self.settings.include_video_id_in_filename else 'No'}")
+        self.log_message.emit(f"[CONFIG] Media Folders  : {'Yes' if self.settings.create_individual_video_folders else 'No'}")
+        self.log_message.emit(f"[CONFIG] Media ID in File: {'Yes' if self.settings.include_video_id_in_filename else 'No'}")
         self.log_message.emit(f"[CONFIG] Number Prefix: {'Yes' if getattr(self.settings, 'add_number_to_filename', False) else 'No'}")
         self.log_message.emit(f"[CONFIG] Skip Existing : {'Yes' if self.settings.skip_existing else 'No'}")
 
@@ -526,9 +536,9 @@ class DownloadManager(QThread):
                 self.video_status_changed.emit(video.video_id, VideoStatus.SKIPPED, reason_label)
                 self.video_progress.emit(video.video_id, 0.0, "-- MB", "-- MB", f"Skipped ({reason_label})", "00:00")
                 if is_known_private:
-                    self.log_message.emit(f"[QUEUE] Skipping private video: {video.title or video.video_id}")
+                    self.log_message.emit(f"[QUEUE] Skipping private media: {video.title or video.video_id}")
                 else:
-                    self.log_message.emit(f"[QUEUE] Skipping unavailable video ({reason_label}): {video.title or video.video_id}")
+                    self.log_message.emit(f"[QUEUE] Skipping unavailable media ({reason_label}): {video.title or video.video_id}")
                 self.log_message.emit(f"[QUEUE] Item {index}/{total_videos} skipped. Continuing to the next item...")
                 rem_c = max(0, total_videos - (completed_count + skipped_count + failed_count))
                 ov_pct = ((completed_count + skipped_count + failed_count) / total_videos) * 100.0
@@ -620,7 +630,7 @@ class DownloadManager(QThread):
                 continue
 
             if self.settings.create_individual_video_folders:
-                self.log_message.emit(f"[FOLDER] Video folder: {video_target_dir}")
+                self.log_message.emit(f"[FOLDER] Media folder: {video_target_dir}")
 
             last_logged_processing_step = None
 
@@ -860,9 +870,9 @@ class DownloadManager(QThread):
                         self.video_status_changed.emit(video.video_id, VideoStatus.SKIPPED, reason_label)
                         self.video_progress.emit(video.video_id, 0.0, "-- KB", "-- KB", f"Skipped ({reason_label})", "00:00")
                         if is_priv:
-                            self.log_message.emit(f"[QUEUE] Skipping private video: {video.title or video.video_id}")
+                            self.log_message.emit(f"[QUEUE] Skipping private media: {video.title or video.video_id}")
                         else:
-                            self.log_message.emit(f"[QUEUE] Skipping unavailable video: {video.title or video.video_id}")
+                            self.log_message.emit(f"[QUEUE] Skipping unavailable media: {video.title or video.video_id}")
                         self.log_message.emit(f"[QUEUE] Item {index}/{total_videos} skipped. Continuing to the next item...")
                     else:
                         failed_count += 1
@@ -915,6 +925,8 @@ class DownloadManager(QThread):
             last_error_msg = ""
             download_error: Optional[DownloadError] = None
             info_dict: Optional[Dict[str, Any]] = None
+            rn_adapter = PlatformRegistry.get_adapter("rednote") if video_platform == "rednote" else None
+            auth_cfg = rn_adapter.get_auth_config(settings=self.settings) if rn_adapter else None
 
             for attempt in range(1, self.MAX_RETRIES + 1):
                 if self._is_cancelled:
@@ -955,6 +967,7 @@ class DownloadManager(QThread):
                             progress_callback=handle_video_progress,
                             log_callback=self.log_message.emit,
                             cancel_check=self.is_cancelled,
+                            skip_existing=self.settings.skip_existing,
                         )
                         success = g_res.get("success", False)
                         is_skipped = g_res.get("skipped", False)
@@ -972,22 +985,411 @@ class DownloadManager(QThread):
                         }
                         if not success and g_res.get("error"):
                             raise DownloaderError(g_res.get("error"), raw_error=g_res.get("error"))
+                    elif route_decision.engine == EngineType.INTERNAL or (video_platform == "rednote" and route_decision.media_type == MediaInventoryType.IMAGE):
+                        # Internal download pipeline for RedNote image/photo notes
+                        rn_adapter = PlatformRegistry.get_adapter("rednote")
+                        auth_cfg = rn_adapter.get_auth_config(settings=self.settings) if rn_adapter else None
+
+                        # 1. Archive check for photo notes
+                        if self.settings.skip_existing and archive_file and Path(archive_file).is_file():
+                            try:
+                                with open(archive_file, "r", encoding="utf-8") as af:
+                                    archived_entries = set(line.strip() for line in af)
+                                if f"rednote {video.video_id}" in archived_entries:
+                                    is_skipped = True
+                                    success = True
+                                    self.log_message.emit(f"[ARCHIVE] RedNote photo note already in download archive: {video.title}. Skipping.")
+                                    info_dict = {
+                                        "id": video.video_id,
+                                        "title": video.title,
+                                        "webpage_url": video.url,
+                                        "ext": "jpg",
+                                        "filesize": 0,
+                                        "media_type": route_decision.media_type,
+                                        "engine": "internal",
+                                    }
+                                    break
+                            except Exception:
+                                pass
+
+                        subfolder_name = sanitize_filename(f"{num_prefix}{video.title}".strip() if num_prefix else video.title)
+                        if not subfolder_name:
+                            subfolder_name = f"rednote_{video.video_id}"
+                        # a. Save in dedicated subfolder as specified in requirement 8.a
+                        photo_target_dir = video_target_dir if self.settings.create_individual_video_folders else (video_target_dir / subfolder_name)
+                        photo_target_dir.mkdir(parents=True, exist_ok=True)
+
+                        photo_urls = video.extra_metadata.get("photo_urls") or []
+                        expected_p_count = int(video.extra_metadata.get("photo_count") or 1)
+                        if (not photo_urls or (expected_p_count > 1 and len(photo_urls) <= 1)) and rn_adapter:
+                            try:
+                                entries = rn_adapter.extract_entries(video.url, auth_config=auth_cfg)
+                                if entries and entries[0].extra_metadata.get("photo_urls"):
+                                    photo_urls = entries[0].extra_metadata["photo_urls"]
+                                    video.extra_metadata.update(entries[0].extra_metadata)
+                            except Exception as ex_err:
+                                self.log_message.emit(f"[WARNING] Could not dynamically retrieve photo list for {video.title}: {ex_err}")
+
+                        cookiejar = rn_adapter._build_cookiejar(auth_cfg) if rn_adapter else http.cookiejar.CookieJar()
+                        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cookiejar))
+
+                        stem_base = resolve_media_filename(video.title, video.video_id, include_video_id=eff_include_id, target_dir=photo_target_dir, number_prefix=num_prefix)
+                        target_fmt = getattr(self.settings, "image_format", "Keep Original") or "Keep Original"
+                        target_ext = ".jpg"
+                        if target_fmt not in ("Keep Original", "Original"):
+                            target_ext = "." + target_fmt.lower().replace("jpeg", "jpg")
+
+                        dl_files = []
+                        total_p = len(photo_urls)
+                        total_bytes = 0
+                        all_already_existed = bool(total_p > 0)
+                        self.log_message.emit(f"[INTERNAL PIPELINE] Downloading RedNote photo note: {video.title} ({total_p} photos) to {photo_target_dir.name}")
+
+                        for p_idx, p_url in enumerate(photo_urls, 1):
+                            if self._is_cancelled:
+                                raise DownloadCancelledException("Download cancelled by user")
+
+                            p_filename = f"{stem_base}_{p_idx:02d}.jpg" if total_p > 1 else f"{stem_base}.jpg"
+                            p_dest = photo_target_dir / p_filename
+                            target_dest = photo_target_dir / (f"{stem_base}_{p_idx:02d}{target_ext}" if total_p > 1 else f"{stem_base}{target_ext}")
+
+                            if self.settings.skip_existing:
+                                if target_dest.exists() and target_dest.stat().st_size > 0:
+                                    dl_files.append(str(target_dest))
+                                    total_bytes += target_dest.stat().st_size
+                                    continue
+                                elif p_dest.exists() and p_dest.stat().st_size > 0:
+                                    dl_files.append(str(p_dest))
+                                    total_bytes += p_dest.stat().st_size
+                                    continue
+
+                            all_already_existed = False
+                            img_data = None
+                            last_err = None
+
+                            candidate_urls = [p_url]
+                            if "sns-img-qc.xhscdn.com" in p_url:
+                                candidate_urls.append(p_url.replace("sns-img-qc.xhscdn.com", "sns-img-hw.xhscdn.com"))
+                                candidate_urls.append(p_url.replace("sns-img-qc.xhscdn.com", "sns-img-bd.xhscdn.com"))
+                            raw_cov = video.extra_metadata.get("raw_cover")
+                            if raw_cov and raw_cov not in candidate_urls:
+                                candidate_urls.append(raw_cov)
+
+                            for cur_u in candidate_urls:
+                                if img_data:
+                                    break
+                                for attempt_idx in range(1, 4):
+                                    if self._is_cancelled:
+                                        raise DownloadCancelledException("Download cancelled by user")
+                                    try:
+                                        p_req = urllib.request.Request(
+                                            cur_u,
+                                            headers={
+                                                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                                                "Referer": "https://www.xiaohongshu.com/",
+                                                "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+                                            },
+                                        )
+                                        with opener.open(p_req, timeout=15) as resp:
+                                            img_data = resp.read()
+                                            if img_data:
+                                                break
+                                    except Exception as ex:
+                                        last_err = ex
+                                        if attempt_idx < 3:
+                                            self._cancelable_sleep(0.5 * attempt_idx)
+
+                            if not img_data:
+                                self.log_message.emit(f"[WARNING] Failed to download photo {p_idx}/{total_p} for {video.title}: {last_err}")
+                                continue
+
+                            with open(p_dest, "wb") as f_img:
+                                f_img.write(img_data)
+                            dl_files.append(str(p_dest))
+                            total_bytes += len(img_data)
+                            pct = (p_idx / max(1, total_p)) * 100.0
+                            self.video_status_changed.emit(video.video_id, f"Downloading ({p_idx}/{total_p})", "")
+                            handle_video_progress({
+                                "status": "downloading",
+                                "percent": pct,
+                                "speed": "-- MB/s",
+                                "eta": "--:--",
+                                "downloaded_bytes": total_bytes,
+                                "total_bytes": total_bytes,
+                            })
+
+                        # Check for LivePhoto video streams and download them alongside images
+                        live_photos = video.extra_metadata.get("live_photo_urls") or {}
+                        for live_idx, live_url in live_photos.items():
+                            if self._is_cancelled:
+                                break
+                            live_stem = f"{stem_base}_{live_idx:02d}_live.mp4" if total_p > 1 else f"{stem_base}_live.mp4"
+                            live_dest = photo_target_dir / live_stem
+                            if self.settings.skip_existing and live_dest.exists() and live_dest.stat().st_size > 0:
+                                continue
+                            try:
+                                l_req = urllib.request.Request(
+                                    live_url,
+                                    headers={
+                                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0.0.0 Safari/537.36",
+                                        "Referer": "https://www.xiaohongshu.com/",
+                                    },
+                                )
+                                with opener.open(l_req, timeout=25) as l_resp:
+                                    with open(live_dest, "wb") as f_live:
+                                        f_live.write(l_resp.read())
+                                self.log_message.emit(f"[LIVE PHOTO] Saved live video: {live_stem}")
+                            except Exception as live_err:
+                                self.log_message.emit(f"[WARNING] Could not download live video clip {live_idx}: {live_err}")
+
+                        # Save description and metadata if configured
+                        desc_text = video.extra_metadata.get("description", "")
+                        file_stem = stem_base
+                        if self.settings.save_description and desc_text:
+                            desc_file = photo_target_dir / f"{file_stem}.description"
+                            with open(desc_file, "w", encoding="utf-8") as f_desc:
+                                f_desc.write(desc_text)
+                        if self.settings.save_metadata:
+                            meta_file = photo_target_dir / f"{file_stem}.metadata.txt"
+                            try:
+                                from metadata.metadata_exporter import MetadataExporter
+                                photo_info = {
+                                    "id": video.video_id,
+                                    "title": video.title,
+                                    "webpage_url": video.url,
+                                    "uploader": video.channel_title,
+                                    "description": desc_text,
+                                    "photos": dl_files,
+                                    "photo_count": len(dl_files),
+                                    "media_type": "PHOTO",
+                                    **video.extra_metadata,
+                                }
+                                MetadataExporter.save_metadata_file(meta_file, photo_info, video=video, platform_id="rednote")
+                            except Exception as meta_err:
+                                with open(meta_file, "w", encoding="utf-8") as f_meta:
+                                    f_meta.write(f"Title: {video.title}\nID: {video.video_id}\nPlatform: RedNote\nURL: {video.url}\nChannel: {video.channel_title}\nPhotos: {len(dl_files)}\n\n{desc_text}")
+
+                        # Connect Pillow format conversion (JPG/PNG/WEBP)
+                        if dl_files and not (self.settings.skip_existing and all_already_existed):
+                            dl_files = self._process_image_conversions(dl_files)
+
+                        if total_p > 0 and not dl_files and not (self.settings.skip_existing and all_already_existed):
+                            raise DownloaderError(f"Failed to download photos for '{video.title}': {last_err or 'Network or CDN error'}")
+
+                        success = bool(dl_files)
+                        is_skipped = bool(self.settings.skip_existing and all_already_existed)
+                        info_dict = {
+                            "id": video.video_id,
+                            "title": video.title,
+                            "webpage_url": video.url,
+                            "ext": Path(dl_files[0]).suffix.lstrip(".") if dl_files else "jpg",
+                            "filesize": sum(Path(f).stat().st_size for f in dl_files if Path(f).exists()),
+                            "media_type": route_decision.media_type,
+                            "engine": "internal",
+                        }
+                        if archive_file and success and not is_skipped:
+                            try:
+                                with open(archive_file, "a", encoding="utf-8") as af:
+                                    af.write(f"rednote {video.video_id}\n")
+                            except Exception:
+                                pass
                     elif route_decision.engine == EngineType.UNSUPPORTED:
                         raise DownloaderError(f"Unsupported media task: {route_decision.rationale}")
                     else:
-                        res = self.engine.download_single_video(
-                            video=video,
-                            settings=video_settings,
-                            target_dir=video_target_dir,
-                            ffmpeg_location=ffmpeg_dir,
-                            archive_file=archive_file,
-                            progress_callback=handle_video_progress,
-                            log_callback=self.log_message.emit,
-                            cancel_check=self.is_cancelled,
-                        )
-                        success = res.get("success", False)
-                        is_skipped = res.get("skipped", False)
-                        info_dict = res.get("info_dict")
+                        # Gating: check if RedNote video was discovered from profile in guest mode without authentic streams
+                        if video_platform == "rednote" and route_decision.media_type != MediaInventoryType.IMAGE:
+                            orig_vurl = video.extra_metadata.get("origin_video_url")
+                            is_guest_anchor = (
+                                not orig_vurl
+                                and (
+                                    "#" in video.url
+                                    or "/user/profile/" in video.url
+                                    or (video.video_id and video.video_id.startswith("1040g"))
+                                )
+                            )
+                            if is_guest_anchor:
+                                has_auth = bool(
+                                    auth_cfg
+                                    and (
+                                        (auth_cfg.auth_method == "browser" and auth_cfg.browser != "none")
+                                        or (auth_cfg.auth_method == "custom_file" and auth_cfg.custom_cookie_file)
+                                    )
+                                )
+                                if not has_auth:
+                                    is_inaccessible_skipped = True
+                                    inaccessible_reason = "Login Required (RedNote Profile Video)"
+                                    inaccessible_cat = ErrorCategory.LOGIN_REQUIRED
+                                    self.log_message.emit("=" * 65)
+                                    self.log_message.emit("[AUTH NOTICE] RedNote restricts creator profile video streams to authenticated users.")
+                                    self.log_message.emit(f"[AUTH NOTICE] Video note '{video.title}' cannot be streamed in guest browsing mode.")
+                                    self.log_message.emit("[AUTH NOTICE] Suggested Action: Please configure RedNote login cookies in Settings -> Authentication -> RedNote.")
+                                    self.log_message.emit("=" * 65)
+                                    break
+
+                        try:
+                            res = self.engine.download_single_video(
+                                video=video,
+                                settings=video_settings,
+                                target_dir=video_target_dir,
+                                ffmpeg_location=ffmpeg_dir,
+                                archive_file=archive_file,
+                                progress_callback=handle_video_progress,
+                                log_callback=self.log_message.emit,
+                                cancel_check=self.is_cancelled,
+                            )
+                            success = res.get("success", False)
+                            is_skipped = res.get("skipped", False)
+                            info_dict = res.get("info_dict")
+                        except DownloaderError as de:
+                            # 8.b Fallback to direct origin video stream for RedNote videos if yt-dlp encounters issues
+                            orig_vurl = video.extra_metadata.get("origin_video_url")
+                            if video_platform == "rednote" and not orig_vurl and rn_adapter:
+                                if "#" not in video.url and "/user/profile/" not in video.url:
+                                    try:
+                                        entries = rn_adapter.extract_entries(video.url, auth_config=auth_cfg)
+                                        if entries and entries[0].extra_metadata.get("origin_video_url"):
+                                            orig_vurl = entries[0].extra_metadata["origin_video_url"]
+                                            video.extra_metadata.update(entries[0].extra_metadata)
+                                    except Exception:
+                                        pass
+                            if video_platform == "rednote" and orig_vurl:
+                                self.log_message.emit(f"[RECOVERY] Falling back to direct RedNote video stream: {orig_vurl}")
+                                v_stem = resolve_media_filename(video.title, video.video_id, include_video_id=eff_include_id, target_dir=video_target_dir, number_prefix=num_prefix)
+                                v_dest = video_target_dir / f"{v_stem}.mp4"
+                                v_req = urllib.request.Request(
+                                    orig_vurl,
+                                    headers={
+                                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0.0.0 Safari/537.36",
+                                        "Referer": "https://www.xiaohongshu.com/",
+                                    },
+                                )
+                                with urllib.request.urlopen(v_req, timeout=30) as v_resp:
+                                    total_len = int(v_resp.headers.get("Content-Length", 0))
+                                    downloaded_bytes = 0
+                                    chunk_size = 64 * 1024
+                                    with open(v_dest, "wb") as f_v:
+                                        while True:
+                                            if self.is_cancelled():
+                                                raise DownloadCancelledException("Cancelled by user")
+                                            chunk = v_resp.read(chunk_size)
+                                            if not chunk:
+                                                break
+                                            f_v.write(chunk)
+                                            downloaded_bytes += len(chunk)
+                                            if total_len > 0:
+                                                pct = min(100.0, (downloaded_bytes / total_len) * 100.0)
+                                                handle_video_progress({
+                                                    "status": "downloading",
+                                                    "percent": pct,
+                                                    "speed": 0,
+                                                    "eta": 0,
+                                                    "downloaded": downloaded_bytes,
+                                                    "total": total_len,
+                                                })
+                                if archive_file:
+                                    try:
+                                        with open(archive_file, "a", encoding="utf-8") as af:
+                                            af.write(f"rednote {video.video_id}\n")
+                                    except Exception:
+                                        pass
+                                is_audio_only = (getattr(video_settings, "download_mode", "") == DownloadMode.AUDIO_ONLY)
+                                is_video_and_audio = (getattr(video_settings, "download_mode", "") == DownloadMode.VIDEO_AND_AUDIO)
+                                final_ext = "mp4"
+
+                                ffmpeg_bin = (
+                                    ffmpeg_path
+                                    or (Path(ffmpeg_dir) / ("ffmpeg.exe" if sys.platform == "win32" else "ffmpeg") if ffmpeg_dir else None)
+                                    or get_bundled_executable("ffmpeg")
+                                    or (Path(shutil.which("ffmpeg")) if shutil.which("ffmpeg") else None)
+                                )
+
+                                # Handle Audio Only or Video + Audio companion extraction
+                                if (is_audio_only or is_video_and_audio) and ffmpeg_bin and Path(ffmpeg_bin).is_file():
+                                    target_audio_ext = (getattr(video_settings, "audio_format", "MP3") or "MP3").lower().strip()
+                                    audio_bitrate_str = getattr(video_settings, "audio_bitrate", "")
+                                    bitrate_val = FormatSelector.get_audio_bitrate_value(audio_bitrate_str, audio_format=target_audio_ext)
+                                    audio_dest = video_target_dir / f"{v_stem}.{target_audio_ext}"
+                                    try:
+                                        import subprocess
+                                        audio_cmd = [str(ffmpeg_bin), "-y", "-i", str(v_dest), "-vn"]
+                                        if target_audio_ext == "mp3":
+                                            audio_cmd += ["-c:a", "libmp3lame"]
+                                            if bitrate_val:
+                                                b_val = f"{bitrate_val}k" if not str(bitrate_val).endswith("k") else str(bitrate_val)
+                                                audio_cmd += ["-b:a", b_val]
+                                            else:
+                                                audio_cmd += ["-b:a", "320k"]
+                                        elif target_audio_ext in ("m4a", "aac"):
+                                            audio_cmd += ["-c:a", "aac"]
+                                            if bitrate_val:
+                                                b_val = f"{bitrate_val}k" if not str(bitrate_val).endswith("k") else str(bitrate_val)
+                                                audio_cmd += ["-b:a", b_val]
+                                        elif target_audio_ext == "wav":
+                                            audio_cmd += ["-c:a", "pcm_s16le"]
+                                            pp_args = FormatSelector.get_audio_postprocessor_args(video_settings)
+                                            if pp_args.get("extractaudio"):
+                                                audio_cmd = [str(ffmpeg_bin), "-y", "-i", str(v_dest), "-vn"] + pp_args["extractaudio"]
+                                        elif target_audio_ext == "flac":
+                                            audio_cmd += ["-c:a", "flac"]
+                                            pp_args = FormatSelector.get_audio_postprocessor_args(video_settings)
+                                            if pp_args.get("extractaudio"):
+                                                audio_cmd += pp_args["extractaudio"]
+                                        elif target_audio_ext == "opus":
+                                            audio_cmd += ["-c:a", "libopus"]
+                                            if bitrate_val:
+                                                b_val = f"{bitrate_val}k" if not str(bitrate_val).endswith("k") else str(bitrate_val)
+                                                audio_cmd += ["-b:a", b_val]
+                                        else:
+                                            audio_cmd += ["-q:a", "0"]
+
+                                        audio_cmd.append(str(audio_dest))
+                                        subprocess.run(audio_cmd, capture_output=True, check=True)
+
+                                        if audio_dest.is_file() and audio_dest.stat().st_size > 0:
+                                            if is_audio_only:
+                                                v_dest.unlink(missing_ok=True)
+                                                v_dest = audio_dest
+                                                final_ext = target_audio_ext
+                                                self.log_message.emit(f"[AUDIO EXTRACTION] Extracted RedNote audio to {audio_dest.name} ({target_audio_ext.upper()})")
+                                            elif is_video_and_audio:
+                                                self.log_message.emit(f"[AUDIO EXTRACTION] Extracted companion RedNote audio to {audio_dest.name} ({target_audio_ext.upper()})")
+                                    except Exception as a_err:
+                                        self.log_message.emit(f"[WARNING] Could not extract audio from RedNote direct stream: {a_err}")
+
+                                # Handle video container remux if video format is requested (e.g. mov, mkv, etc.)
+                                if not is_audio_only:
+                                    req_format = (getattr(video_settings, "format", None) or getattr(video_settings, "video_format", "mp4") or "mp4").lower()
+                                    if req_format in ("mov", "mkv", "webm", "avi", "flv") and req_format != "mp4":
+                                        target_ext_file = video_target_dir / f"{v_stem}.{req_format}"
+                                        try:
+                                            if ffmpeg_bin and Path(ffmpeg_bin).is_file():
+                                                import subprocess
+                                                cmd = [
+                                                    str(ffmpeg_bin),
+                                                    "-y",
+                                                    "-i", str(v_dest),
+                                                    "-c", "copy",
+                                                    str(target_ext_file),
+                                                ]
+                                                subprocess.run(cmd, capture_output=True, check=True)
+                                                if target_ext_file.exists() and target_ext_file.stat().st_size > 0:
+                                                    v_dest.unlink(missing_ok=True)
+                                                    v_dest = target_ext_file
+                                                    final_ext = req_format
+                                        except Exception as ff_err:
+                                            self.log_message.emit(f"[WARNING] Could not remux to {req_format}: {ff_err}")
+
+                                success = True
+                                is_skipped = False
+                                info_dict = {
+                                    "id": video.video_id,
+                                    "title": video.title,
+                                    "ext": final_ext,
+                                    "filesize": v_dest.stat().st_size,
+                                    "webpage_url": video.url,
+                                }
+                            else:
+                                raise
                     break
 
                 except DownloadCancelledException:
@@ -1058,7 +1460,7 @@ class DownloadManager(QThread):
                         self.log_message.emit("=" * 65)
                         self.log_message.emit(f"[ERROR] {download_error.title}: '{video.title}'")
                         self.log_message.emit(f"[ERROR] Reason: {download_error.user_message}")
-                        self.log_message.emit(f"[ERROR] Category: {download_error.category} | Component: {download_error.component} | Video ID: {video.video_id}")
+                        self.log_message.emit(f"[ERROR] Category: {download_error.category} | Component: {download_error.component} | Media ID: {video.video_id}")
                         self.log_message.emit("[ERROR] Suggested Action:")
                         for act_line in download_error.suggested_action.splitlines():
                             self.log_message.emit(f"  {act_line}")
@@ -1128,9 +1530,11 @@ class DownloadManager(QThread):
                 self.video_status_changed.emit(video.video_id, VideoStatus.SKIPPED, inaccessible_reason)
                 self.video_progress.emit(video.video_id, 0.0, "-- MB", "-- MB", f"Skipped ({inaccessible_reason})", "00:00")
                 if inaccessible_cat == ErrorCategory.PRIVATE_VIDEO:
-                    self.log_message.emit(f"[QUEUE] Skipping private video: {video.title or video.video_id}")
+                    self.log_message.emit(f"[QUEUE] Skipping private media: {video.title or video.video_id}")
+                elif inaccessible_cat == ErrorCategory.LOGIN_REQUIRED:
+                    self.log_message.emit(f"[QUEUE] Skipping login-restricted media: {video.title or video.video_id} (RedNote cookies required)")
                 else:
-                    self.log_message.emit(f"[QUEUE] Skipping unavailable video: {video.title or video.video_id}")
+                    self.log_message.emit(f"[QUEUE] Skipping unavailable media: {video.title or video.video_id}")
                 self.log_message.emit(f"[QUEUE] Item {index}/{total_videos} skipped. Continuing to the next item...")
                 self.engine.safe_cleanup_partial_files(video_target_dir, video.video_id, title=video.title)
                 rem_c = max(0, total_videos - (completed_count + skipped_count + failed_count))
@@ -1520,7 +1924,7 @@ class DownloadManager(QThread):
                     skipped_count += 1
                     self.video_status_changed.emit(video.video_id, VideoStatus.SKIPPED, "Already in download archive")
                     self.video_progress.emit(video.video_id, 100.0, last_media_downloaded_str, last_media_total_str, "Finished", "00:00")
-                    self.log_message.emit(f"[SKIPPED] Video already exists: {video.title}")
+                    self.log_message.emit(f"[SKIPPED] Media already exists: {video.title}")
                 else:
                     video.status = VideoStatus.COMPLETED
                     video.error_reason = ""

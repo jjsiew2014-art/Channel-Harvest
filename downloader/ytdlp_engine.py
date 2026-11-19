@@ -902,12 +902,20 @@ class YtDlpEngine:
         elif info.get("id"):
             entries_list = [info]
 
-        is_playlist = (
+        has_playlist_param = (
             "list=" in normalized_url.lower()
             or "/playlist" in normalized_url.lower()
             or "/browse/mpreb_" in normalized_url.lower()
             or "/album/" in normalized_url.lower()
-            or info.get("_type") == "playlist"
+        )
+        is_channel_url = bool(
+            (re.search(r"/(?:@|channel/|c/|user/)[^/]+", normalized_url, re.IGNORECASE)
+            or normalized_url.rstrip("/").endswith("/videos"))
+            and not has_playlist_param
+        )
+        is_playlist = (
+            has_playlist_param
+            or (info.get("_type") == "playlist" and not is_channel_url)
         )
         is_single_video = raw_entries is None and bool(info.get("id")) and not is_playlist
 
@@ -1018,7 +1026,7 @@ class YtDlpEngine:
             raise EmptyChannelError("All videos found in this channel are private or unavailable.")
 
         if log_callback:
-            log_callback(f"[SUCCESS] Successfully retrieved {len(video_items)} video(s).")
+            log_callback(f"[SUCCESS] Successfully retrieved {len(video_items)} media.")
 
         scan_extra_meta = {}
         if extracted_playlist_id:
@@ -1262,19 +1270,20 @@ class YtDlpEngine:
         format_spec: str = "",
         log_callback: Optional[Callable[[str], None]] = None,
         cancel_check: Optional[Callable[[], bool]] = None,
+        skip_existing: bool = True,
     ) -> Any:
         """
         Safely handles HTTP 416 (Requested Range Not Satisfiable) recovery:
         1. Logs concise detection messages.
-        2. Checks whether a valid completed final file already exists (preserves it if so).
+        2. Checks whether a valid completed final file already exists (preserves it if skip_existing is True).
         3. Waits briefly to confirm subprocess/file handle release.
         4. Identifies and removes ONLY the partial .part / .ytdl files belonging to this video.
         5. Logs diagnostic information (without exposing sensitive tokens or URLs).
-        6. Prepares for a genuinely fresh download without resume (continuedl=False).
+        6. Prepares for a genuinely fresh download without resume (continuedl=False, overwrites=True).
 
         Returns:
             True if partial state was safely reset and a fresh download should proceed.
-            'ALREADY_COMPLETE' if a valid final file exists and no download is needed.
+            'ALREADY_COMPLETE' if a valid final file exists and no download is needed (skip_existing=True).
             False if recovery cannot be performed.
         """
         if cancel_check and cancel_check():
@@ -1284,18 +1293,33 @@ class YtDlpEngine:
             log_callback(f"[Download] HTTP 416 detected for video {video.video_id}")
             log_callback("[Download] Partial resume state appears invalid")
 
-        # 1. Check whether a valid completed final file already exists
-        completed_file = find_completed_final_file(target_dir, video.video_id, title=video.title)
-        if completed_file:
-            if log_callback:
-                log_callback(f"[Download] Valid completed final file already exists: {completed_file.name}. Preserving file.")
-            # Clean up any leftover stale .part files
+        # 1. Check whether a valid completed final file already exists (only if skip_existing is True)
+        if skip_existing:
+            completed_file = find_completed_final_file(target_dir, video.video_id, title=video.title)
+            if completed_file:
+                if log_callback:
+                    log_callback(f"[Download] Valid completed final file already exists: {completed_file.name}. Preserving file.")
+                # Clean up any leftover stale .part files
+                for p in find_video_partial_files(target_dir, video.video_id, title=video.title):
+                    try:
+                        p.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+                return "ALREADY_COMPLETE"
+        else:
+            # If skip_existing is False, user requested fresh download.
+            # Clean up both partial files and the conflicting completed file so fresh download can overwrite cleanly.
             for p in find_video_partial_files(target_dir, video.video_id, title=video.title):
                 try:
                     p.unlink(missing_ok=True)
                 except Exception:
                     pass
-            return "ALREADY_COMPLETE"
+            completed_file = find_completed_final_file(target_dir, video.video_id, title=video.title)
+            if completed_file and completed_file.is_file():
+                try:
+                    completed_file.unlink(missing_ok=True)
+                except Exception:
+                    pass
 
         if log_callback:
             log_callback("[Download] Waiting for download process to terminate")
@@ -1373,10 +1397,11 @@ class YtDlpEngine:
         format_spec: str = "",
         log_callback: Optional[Callable[[str], None]] = None,
         cancel_check: Optional[Callable[[], bool]] = None,
+        skip_existing: bool = True,
     ) -> Any:
         """
         Safely attempts recovery from an HTTP 403 (Forbidden) stream rejection:
-        1. Checks whether a valid completed final file already exists (preserves it if so).
+        1. Checks whether a valid completed final file already exists (preserves it if skip_existing is True).
         2. Safely removes any stale partial .part or .ytdl files belonging to this video only.
         3. Logs diagnostic message without exposing tokens or signed URLs.
         4. Authorizes a bounded single fresh retry without resume and without cached tokens.
@@ -1387,12 +1412,13 @@ class YtDlpEngine:
         if log_callback:
             log_callback(f"[Download] HTTP 403 Forbidden detected for video {video.video_id}")
 
-        completed_file = find_completed_final_file(target_dir, video.video_id, title=video.title)
-        if completed_file:
-            if log_callback:
-                log_callback(f"[Download] Valid completed final file already exists: {completed_file.name}. Preserving file.")
-            cls.safe_cleanup_partial_files(target_dir, video.video_id, title=video.title)
-            return "ALREADY_COMPLETE"
+        if skip_existing:
+            completed_file = find_completed_final_file(target_dir, video.video_id, title=video.title)
+            if completed_file:
+                if log_callback:
+                    log_callback(f"[Download] Valid completed final file already exists: {completed_file.name}. Preserving file.")
+                cls.safe_cleanup_partial_files(target_dir, video.video_id, title=video.title)
+                return "ALREADY_COMPLETE"
 
         # Safely clean up partial files for this video
         cls.safe_cleanup_partial_files(target_dir, video.video_id, title=video.title)
@@ -1448,6 +1474,14 @@ class YtDlpEngine:
                 if log_callback:
                     log_callback(f"[WARNING] Could not read download archive: {e}")
 
+        # Check existing final file on disk if skip_existing is enabled
+        if settings.skip_existing:
+            completed_file = find_completed_final_file(target_dir, video.video_id, title=video.title)
+            if completed_file:
+                if log_callback:
+                    log_callback(f"[ARCHIVE] Media file already exists on disk: {completed_file.name}. Skipping download.")
+                return {"success": True, "skipped": True}
+
         if video.url:
             video_url = video.url
         elif platform_prefix == "tiktok":
@@ -1486,7 +1520,7 @@ class YtDlpEngine:
         # 2. Mode: Video Only (complete video with audio merged)
         num_prefix = getattr(settings, "number_prefix", "")
         fb_custom_title = video.title if (platform_prefix == "facebook" and getattr(video, "title", None)) else None
-        if mode == DownloadMode.VIDEO_ONLY:
+        if mode in (DownloadMode.VIDEO_ONLY, DownloadMode.VIDEO_AND_IMAGE):
             format_spec, merge_ext = FormatSelector.build_video_format_spec(settings)
             outtmpl_pattern = resolve_video_outtmpl(target_dir, include_video_id=settings.include_video_id_in_filename, number_prefix=num_prefix, custom_title=fb_custom_title)
             hook = self._create_progress_hook(
@@ -1517,7 +1551,8 @@ class YtDlpEngine:
                 "outtmpl": outtmpl_pattern,
                 "merge_output_format": merge_ext,
                 "windowsfilenames": True,
-                "continuedl": True,
+                "continuedl": settings.skip_existing,
+                "overwrites": not settings.skip_existing,
                 "progress_hooks": [hook],
                 "postprocessor_hooks": [pp_hook],
             })
@@ -1566,7 +1601,7 @@ class YtDlpEngine:
                     if cancel_check and cancel_check():
                         raise DownloadCancelledException("Download cancelled by user.") from e
                     err_msg = str(e)
-                    if "already been recorded in the archive" in err_msg:
+                    if settings.skip_existing and "already been recorded in the archive" in err_msg:
                         return {"success": True, "skipped": True, "info_dict": None}
                     paths = parse_locked_rename_paths(err_msg)
                     if paths and finalization_retries < MAX_FINALIZATION_RECOVERIES:
@@ -1604,11 +1639,13 @@ class YtDlpEngine:
                                 format_spec=format_spec,
                                 log_callback=log_callback,
                                 cancel_check=cancel_check,
+                                skip_existing=settings.skip_existing,
                             )
                             if rec_status == "ALREADY_COMPLETE":
                                 return {"success": True, "skipped": True, "info_dict": None}
                             elif rec_status:
                                 ydl_opts["continuedl"] = False
+                                ydl_opts["overwrites"] = True
                                 continue
                         if log_callback:
                             log_callback(
@@ -1633,11 +1670,13 @@ class YtDlpEngine:
                                 format_spec=format_spec,
                                 log_callback=log_callback,
                                 cancel_check=cancel_check,
+                                skip_existing=settings.skip_existing,
                             )
                             if rec_status == "ALREADY_COMPLETE":
                                 return {"success": True, "skipped": True, "info_dict": None}
                             elif rec_status:
                                 ydl_opts["continuedl"] = False
+                                ydl_opts["overwrites"] = True
                                 ydl_opts["cachedir"] = False
                                 continue
                         if log_callback:
@@ -1714,7 +1753,8 @@ class YtDlpEngine:
                 "outtmpl": outtmpl_pattern,
                 "postprocessors": postprocessors,
                 "windowsfilenames": True,
-                "continuedl": True,
+                "continuedl": settings.skip_existing,
+                "overwrites": not settings.skip_existing,
                 "progress_hooks": [hook],
                 "postprocessor_hooks": [pp_hook],
             })
@@ -1765,7 +1805,7 @@ class YtDlpEngine:
                     if cancel_check and cancel_check():
                         raise DownloadCancelledException("Download cancelled by user.") from e
                     err_msg = str(e)
-                    if "already been recorded in the archive" in err_msg:
+                    if settings.skip_existing and "already been recorded in the archive" in err_msg:
                         return {"success": True, "skipped": True, "info_dict": None}
                     paths = parse_locked_rename_paths(err_msg)
                     if paths and finalization_retries < MAX_FINALIZATION_RECOVERIES:
@@ -1803,11 +1843,13 @@ class YtDlpEngine:
                                 format_spec=format_spec,
                                 log_callback=log_callback,
                                 cancel_check=cancel_check,
+                                skip_existing=settings.skip_existing,
                             )
                             if rec_status == "ALREADY_COMPLETE":
                                 return {"success": True, "skipped": True, "info_dict": None}
                             elif rec_status:
                                 ydl_opts["continuedl"] = False
+                                ydl_opts["overwrites"] = True
                                 continue
                         if log_callback:
                             log_callback(
@@ -1832,11 +1874,13 @@ class YtDlpEngine:
                                 format_spec=format_spec,
                                 log_callback=log_callback,
                                 cancel_check=cancel_check,
+                                skip_existing=settings.skip_existing,
                             )
                             if rec_status == "ALREADY_COMPLETE":
                                 return {"success": True, "skipped": True, "info_dict": None}
                             elif rec_status:
                                 ydl_opts["continuedl"] = False
+                                ydl_opts["overwrites"] = True
                                 ydl_opts["cachedir"] = False
                                 if "format_id!=251" not in ydl_opts.get("format", ""):
                                     ydl_opts["format"] = "ba[ext=m4a]/ba[format_id!=251]/ba/b"
@@ -1922,7 +1966,8 @@ class YtDlpEngine:
                 "outtmpl": v_outtmpl,
                 "merge_output_format": merge_ext,
                 "windowsfilenames": True,
-                "continuedl": True,
+                "continuedl": settings.skip_existing,
+                "overwrites": not settings.skip_existing,
                 "progress_hooks": [v_hook],
                 "postprocessor_hooks": [v_pp_hook],
             })
@@ -1965,7 +2010,7 @@ class YtDlpEngine:
                     if cancel_check and cancel_check():
                         raise DownloadCancelledException("Download cancelled by user.") from e
                     err_msg = str(e)
-                    if "already been recorded in the archive" in err_msg:
+                    if settings.skip_existing and "already been recorded in the archive" in err_msg:
                         return {"success": True, "skipped": True, "info_dict": None}
                     paths = parse_locked_rename_paths(err_msg)
                     if paths and v_finalization_retries < MAX_FINALIZATION_RECOVERIES:
@@ -1994,11 +2039,13 @@ class YtDlpEngine:
                                 format_spec=v_format_spec,
                                 log_callback=log_callback,
                                 cancel_check=cancel_check,
+                                skip_existing=settings.skip_existing,
                             )
                             if rec_status == "ALREADY_COMPLETE":
                                 break
                             elif rec_status:
                                 v_opts["continuedl"] = False
+                                v_opts["overwrites"] = True
                                 continue
                         if log_callback:
                             log_callback(
@@ -2023,11 +2070,13 @@ class YtDlpEngine:
                                 format_spec=v_format_spec,
                                 log_callback=log_callback,
                                 cancel_check=cancel_check,
+                                skip_existing=settings.skip_existing,
                             )
                             if rec_status == "ALREADY_COMPLETE":
                                 break
                             elif rec_status:
                                 v_opts["continuedl"] = False
+                                v_opts["overwrites"] = True
                                 v_opts["cachedir"] = False
                                 continue
                         if log_callback:
@@ -2104,7 +2153,8 @@ class YtDlpEngine:
                 "outtmpl": a_outtmpl,
                 "postprocessors": a_postprocessors,
                 "windowsfilenames": True,
-                "continuedl": True,
+                "continuedl": settings.skip_existing,
+                "overwrites": not settings.skip_existing,
                 "progress_hooks": [a_hook],
                 "postprocessor_hooks": [a_pp_hook],
             })
@@ -2176,11 +2226,13 @@ class YtDlpEngine:
                                 format_spec=a_format_spec,
                                 log_callback=log_callback,
                                 cancel_check=cancel_check,
+                                skip_existing=settings.skip_existing,
                             )
                             if rec_status == "ALREADY_COMPLETE":
                                 break
                             elif rec_status:
                                 a_opts["continuedl"] = False
+                                a_opts["overwrites"] = True
                                 continue
                         if log_callback:
                             log_callback(
@@ -2205,11 +2257,13 @@ class YtDlpEngine:
                                 format_spec=a_format_spec,
                                 log_callback=log_callback,
                                 cancel_check=cancel_check,
+                                skip_existing=settings.skip_existing,
                             )
                             if rec_status == "ALREADY_COMPLETE":
                                 break
                             elif rec_status:
                                 a_opts["continuedl"] = False
+                                a_opts["overwrites"] = True
                                 a_opts["cachedir"] = False
                                 if "format_id!=251" not in a_opts.get("format", ""):
                                     a_opts["format"] = "ba[ext=m4a]/ba[format_id!=251]/ba/b"
@@ -2344,8 +2398,13 @@ class ChannelScanWorker(QThread):
                         from core.platform.facebook import FacebookAdapter
                         if FacebookAdapter.is_profile_url(self.url):
                             is_archive_url = True
+                    elif adapter.platform_id == "rednote":
+                        m_prof = getattr(adapter, "_USER_URL_PATTERN", None)
+                        is_coll = getattr(adapter, "is_collection_url", lambda u: False)(self.url)
+                        if (m_prof and m_prof.search(self.url)) or is_coll:
+                            is_archive_url = True
 
-                    if is_archive_url and GalleryDlEngine.is_available():
+                    if is_archive_url and (GalleryDlEngine.is_available() or adapter.platform_id == "rednote"):
                         from downloader.profile_scan_manager import ProfileScanManager
                         manager = ProfileScanManager()
                         scan_res = manager.scan_profile(

@@ -94,6 +94,11 @@ class SettingsManager:
         "tiktok_auth_method": "none",
         "tiktok_custom_cookie_file": "",
         "tiktok_last_auth_status": "NOT_CONFIGURED",
+        "rednote_auth_method": "none",
+        "rednote_browser_cookies": "none",
+        "rednote_browser_profile": "Default",
+        "rednote_custom_cookie_file": "",
+        "rednote_last_auth_status": "NOT_CONFIGURED",
         "all_auth_method": "none",
         "all_custom_cookie_file": "",
         "all_last_auth_status": "NOT_CONFIGURED",
@@ -138,10 +143,12 @@ class SettingsManager:
             elif "include_media_id_in_filename" in loaded and "include_video_id_in_filename" not in loaded:
                 self._data["include_video_id_in_filename"] = loaded["include_media_id_in_filename"]
 
-            if "skip_existing" in loaded and "skip_downloaded_media" not in loaded:
-                self._data["skip_downloaded_media"] = loaded["skip_existing"]
-            elif "skip_downloaded_media" in loaded and "skip_existing" not in loaded:
+            if "skip_downloaded_media" in loaded:
+                self._data["skip_downloaded_media"] = loaded["skip_downloaded_media"]
                 self._data["skip_existing"] = loaded["skip_downloaded_media"]
+            elif "skip_existing" in loaded:
+                self._data["skip_downloaded_media"] = loaded["skip_existing"]
+                self._data["skip_existing"] = loaded["skip_existing"]
 
             if "create_individual_video_folders" in loaded and "create_individual_media_folders" not in loaded:
                 self._data["create_individual_media_folders"] = loaded["create_individual_video_folders"]

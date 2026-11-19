@@ -81,6 +81,10 @@ class TestAssetsOnlyMode(unittest.TestCase):
         self.window.save_desc_cb.setChecked(False)
         self.window.save_meta_cb.setChecked(False)
         self.window.save_chapters_cb.setChecked(False)
+        if hasattr(self.window, "download_lrc_cb"):
+            self.window.download_lrc_cb.setChecked(False)
+        if hasattr(self.window, "cover_art_cb"):
+            self.window.cover_art_cb.setChecked(False)
 
         # Mock selected videos and valid folder
         test_video = VideoItem(

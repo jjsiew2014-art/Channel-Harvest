@@ -15,6 +15,7 @@ datas += collect_data_files('yt_dlp')
 datas += collect_data_files('yt_dlp_ejs')
 datas += collect_data_files('curl_cffi')
 datas += collect_data_files('gallery_dl')
+datas += collect_data_files('certifi')
 
 hidden_imports = [
     'PySide6.QtCore',
@@ -70,6 +71,7 @@ hidden_imports = [
     'core.platform.instagram',
     'core.platform.instagram_web',
     'core.platform.x',
+    'core.platform.rednote',
     'core.platform.auth',
     'core.availability',
     'metadata',
@@ -80,6 +82,7 @@ hidden_imports = [
     'metadata.facebook_formatter',
     'metadata.instagram_formatter',
     'metadata.x_formatter',
+    'metadata.rednote_formatter',
     'metadata.generic_formatter',
     'metadata.metadata_exporter',
     'downloader',
@@ -110,6 +113,7 @@ hidden_imports = [
 ]
 hidden_imports += collect_submodules('curl_cffi')
 hidden_imports += collect_submodules('syncedlyrics')
+hidden_imports += ['certifi', 'certifi.core'] + collect_submodules('certifi')
 
 a = Analysis(
     ['app.py'],
@@ -119,7 +123,7 @@ a = Analysis(
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['rthook_certifi.py'],
     excludes=['tkinter', 'unittest', 'test'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

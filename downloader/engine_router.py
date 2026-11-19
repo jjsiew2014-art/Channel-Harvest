@@ -23,6 +23,7 @@ class EngineType:
     """Download engine identifiers."""
     YTDLP = "yt-dlp"
     GALLERY_DL = "gallery-dl"
+    INTERNAL = "internal"
     UNSUPPORTED = "unsupported"
 
 
@@ -45,6 +46,10 @@ class EngineRouteDecision:
     @property
     def is_gallery_dl(self) -> bool:
         return self.engine == EngineType.GALLERY_DL
+
+    @property
+    def is_internal(self) -> bool:
+        return self.engine == EngineType.INTERNAL
 
     @property
     def is_supported(self) -> bool:
@@ -114,7 +119,7 @@ class DownloadEngineRouter:
             if m_type:
                 return str(m_type).upper(), extra
             # VideoItem by default represents a video unless extra metadata indicates image
-            if extra.get("is_image") or extra.get("is_photo"):
+            if extra.get("is_image") or extra.get("is_photo") or extra.get("photo_urls") or getattr(item, "media_type", "") in ("Photo", "PHOTO"):
                 return MediaInventoryType.IMAGE, extra
             return MediaInventoryType.VIDEO, extra
 
@@ -237,6 +242,55 @@ class DownloadEngineRouter:
                 rationale="Unclassified Facebook media routed to yt-dlp",
                 can_fallback=True,
                 fallback_engine=EngineType.GALLERY_DL,
+            )
+
+        # ---------------------------------------------------------------------
+        # RedNote (XiaoHongShu) Routing Policy
+        # ---------------------------------------------------------------------
+        if platform == "rednote":
+            if media_type in (MediaInventoryType.IMAGE, "PHOTO"):
+                return EngineRouteDecision(
+                    engine=EngineType.INTERNAL,
+                    media_type=MediaInventoryType.IMAGE,
+                    rationale="RedNote photo note routed to internal download pipeline",
+                    can_fallback=False,
+                )
+            if media_type in (MediaInventoryType.VIDEO, MediaInventoryType.REEL):
+                return EngineRouteDecision(
+                    engine=EngineType.YTDLP,
+                    media_type=media_type,
+                    rationale="RedNote video note routed to yt-dlp / direct stream pipeline",
+                    can_fallback=True,
+                    fallback_engine=EngineType.INTERNAL,
+                )
+            if media_type == MediaInventoryType.AUDIO:
+                return EngineRouteDecision(
+                    engine=EngineType.YTDLP,
+                    media_type=media_type,
+                    rationale="RedNote audio extraction routed to yt-dlp",
+                    can_fallback=True,
+                    fallback_engine=EngineType.INTERNAL,
+                )
+            if media_type == MediaInventoryType.UNSUPPORTED:
+                return EngineRouteDecision(
+                    engine=EngineType.UNSUPPORTED,
+                    media_type=media_type,
+                    rationale="RedNote media format is unsupported",
+                    can_fallback=False,
+                )
+            if metadata.get("is_photo") or metadata.get("photo_urls"):
+                return EngineRouteDecision(
+                    engine=EngineType.INTERNAL,
+                    media_type=MediaInventoryType.IMAGE,
+                    rationale="RedNote media with photo indicator routed to internal pipeline",
+                    can_fallback=False,
+                )
+            return EngineRouteDecision(
+                engine=EngineType.YTDLP,
+                media_type=media_type,
+                rationale="Unclassified RedNote media routed to yt-dlp",
+                can_fallback=True,
+                fallback_engine=EngineType.INTERNAL,
             )
 
         # ---------------------------------------------------------------------

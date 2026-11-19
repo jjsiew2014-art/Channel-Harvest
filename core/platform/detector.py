@@ -24,6 +24,7 @@ class PlatformDetector:
     FACEBOOK_DOMAINS = ("facebook.com", "fb.watch", "fb.com", "fb.me")
     INSTAGRAM_DOMAINS = ("instagram.com", "instagr.am")
     X_DOMAINS = ("x.com", "twitter.com")
+    REDNOTE_DOMAINS = ("xiaohongshu.com", "xhslink.com", "rednote.com")
 
     @classmethod
     def extract_url(cls, text: str) -> str:
@@ -34,10 +35,15 @@ class PlatformDetector:
         if not text or not isinstance(text, str):
             return ""
         import re
-        m = re.search(r"https?://[^\s]+", text)
+        # Match standard URL characters stopping before Chinese characters or whitespace
+        m = re.search(r"https?://[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+", text)
         if m:
-            clean = m.group(0).rstrip("，。！？；、“”‘’'\"")
+            clean = m.group(0).rstrip("，。！？；、“”‘’'\"）】〉》>],;.")
             return clean
+        # Fallback to general non-whitespace match
+        m_fallback = re.search(r"https?://[^\s]+", text)
+        if m_fallback:
+            return m_fallback.group(0).rstrip("，。！？；、“”‘’'\"）】〉》>],;.")
         return text.strip()
 
     @classmethod
@@ -92,6 +98,10 @@ class PlatformDetector:
             # Check X (Twitter)
             if any(netloc == host or netloc.endswith("." + host) for host in cls.X_DOMAINS):
                 return "x"
+
+            # Check RedNote (XiaoHongShu)
+            if any(netloc == host or netloc.endswith("." + host) for host in cls.REDNOTE_DOMAINS):
+                return "rednote"
 
         except Exception:
             return "unknown"

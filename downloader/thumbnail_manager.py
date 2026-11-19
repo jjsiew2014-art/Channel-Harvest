@@ -131,6 +131,69 @@ class ThumbnailManager:
         return False, None
 
     @classmethod
+    def _save_image_data(
+        cls,
+        img_bytes: bytes,
+        target_dir: Path,
+        stem: str,
+        target_ext: Optional[str],
+        log_callback: Optional[Callable[[str], None]] = None,
+    ) -> Optional[Path]:
+        """
+        Saves raw image bytes to disk in the requested format (JPG, PNG, WEBP, or Original)
+        using Pillow with maximum fidelity and zero unnecessary loss.
+        """
+        if not img_bytes:
+            return None
+        import io
+        from PIL import Image
+
+        try:
+            with Image.open(io.BytesIO(img_bytes)) as im:
+                src_format = (im.format or "").upper()
+                if not target_ext:  # Original format
+                    ext = "jpg" if src_format in ("JPEG", "JPG") else src_format.lower()
+                    if not ext or ext == "none":
+                        ext = "jpg"
+                    dest_file = target_dir / f"{stem}.{ext}"
+                    dest_file.write_bytes(img_bytes)
+                    return dest_file
+
+                target_ext_clean = target_ext.lower().lstrip(".")
+                if target_ext_clean == "jpg":
+                    dest_file = target_dir / f"{stem}.jpg"
+                    if src_format in ("JPEG", "JPG"):
+                        # Already JPEG: write source bytes directly with 100% original quality
+                        dest_file.write_bytes(img_bytes)
+                        return dest_file
+                    if im.mode in ("RGBA", "LA", "P"):
+                        im = im.convert("RGB")
+                    im.save(dest_file, "JPEG", quality=95, subsampling=0)
+                    return dest_file
+                elif target_ext_clean == "png":
+                    dest_file = target_dir / f"{stem}.png"
+                    if src_format == "PNG":
+                        dest_file.write_bytes(img_bytes)
+                        return dest_file
+                    im.save(dest_file, "PNG", optimize=True)
+                    return dest_file
+                elif target_ext_clean == "webp":
+                    dest_file = target_dir / f"{stem}.webp"
+                    if src_format == "WEBP":
+                        dest_file.write_bytes(img_bytes)
+                        return dest_file
+                    im.save(dest_file, "WEBP", quality=95)
+                    return dest_file
+                else:
+                    dest_file = target_dir / f"{stem}.{target_ext_clean}"
+                    dest_file.write_bytes(img_bytes)
+                    return dest_file
+        except Exception as e:
+            if log_callback:
+                log_callback(f"[Thumbnail] Image processing error: {e}")
+            return None
+
+    @classmethod
     def download_thumbnail(
         cls,
         video: VideoItem,
@@ -186,13 +249,53 @@ class ThumbnailManager:
 
         fmt_choice = (settings.thumbnail_format or ThumbnailFormat.JPG).strip().upper()
         target_ext = cls.get_target_extension(fmt_choice)
+        num_prefix = getattr(settings, "number_prefix", "")
+        stem = resolve_media_filename(video.title, video.video_id, include_video_id=include_id, target_dir=target_dir, number_prefix=num_prefix)
 
         if log_callback:
             log_callback(f"[Thumbnail] Downloading: {video.title}")
 
+        # 1.5 Direct Master Thumbnail Download
+        # If the platform adapter has already extracted an authentic master image URL (e.g. RedNote CDN)
+        direct_thumb_url = getattr(video, "cover_art_url", None) or (getattr(video, "extra_metadata", None) or {}).get("thumbnail_url")
+        if direct_thumb_url and isinstance(direct_thumb_url, str) and direct_thumb_url.startswith(("http://", "https://")):
+            if not ("!nd_prv" in direct_thumb_url or "_prv_" in direct_thumb_url):
+                try:
+                    import urllib.request
+                    ref_url = getattr(video, "url", "") or "https://www.xiaohongshu.com/"
+                    req = urllib.request.Request(
+                        direct_thumb_url,
+                        headers={
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+                            "Referer": ref_url,
+                            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+                        },
+                    )
+                    with urllib.request.urlopen(req, timeout=15) as resp:
+                        img_bytes = resp.read()
+
+                    if img_bytes and len(img_bytes) > 500:
+                        saved_file = cls._save_image_data(
+                            img_bytes=img_bytes,
+                            target_dir=target_dir,
+                            stem=stem,
+                            target_ext=target_ext,
+                            log_callback=log_callback,
+                        )
+                        if saved_file and saved_file.is_file() and saved_file.stat().st_size > 0:
+                            if log_callback:
+                                log_callback(f"[Thumbnail] Saved: {saved_file.name}")
+                            return {
+                                "success": True,
+                                "skipped": False,
+                                "saved_file": saved_file,
+                                "error": "",
+                            }
+                except Exception as direct_err:
+                    if log_callback:
+                        log_callback(f"[Thumbnail] Direct master thumbnail retrieval failed ({direct_err}), falling back to engine...")
+
         # 2. Configure yt-dlp options for native thumbnail retrieval & conversion
-        num_prefix = getattr(settings, "number_prefix", "")
-        stem = resolve_media_filename(video.title, video.video_id, include_video_id=include_id, target_dir=target_dir, number_prefix=num_prefix)
         outtmpl_pattern = str(target_dir / f"{stem}.%(ext)s")
 
         platform = getattr(video, "platform", "youtube")
@@ -209,7 +312,8 @@ class ThumbnailManager:
             "skip_download": True,
             "writethumbnail": True,
             "windowsfilenames": True,
-            "continuedl": True,
+            "continuedl": settings.skip_existing,
+            "overwrites": not settings.skip_existing,
             "outtmpl": outtmpl_pattern,
         })
 
@@ -227,6 +331,23 @@ class ThumbnailManager:
             ydl_opts["ffmpeg_location"] = ffmpeg_location
 
         # 3. Execute download via yt-dlp (reuse info_dict if provided to avoid duplicate network extraction)
+        # Sanitize info_dict thumbnails to remove low-res preview urls (like !nd_prv...)
+        if info_dict and "thumbnails" in info_dict:
+            orig_thumbs = info_dict.get("thumbnails") or []
+            if orig_thumbs:
+                filtered = [
+                    t for t in orig_thumbs
+                    if not (isinstance(t.get("url"), str) and ("!nd_prv" in t["url"] or "_prv_" in t["url"]))
+                ]
+                if filtered:
+                    info_dict["thumbnails"] = filtered
+                if direct_thumb_url and isinstance(direct_thumb_url, str):
+                    info_dict["thumbnails"].append({
+                        "url": direct_thumb_url,
+                        "preference": 1000,
+                        "width": getattr(video, "cover_art_width", None) or 3840,
+                        "height": getattr(video, "cover_art_height", None) or 2160,
+                    })
         try:
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 if info_dict:
